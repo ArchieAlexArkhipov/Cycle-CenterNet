@@ -14,9 +14,9 @@ from .dense_test_mixins import BBoxTestMixin
 
 
 @HEADS.register_module()
-class CenterNetHead(BaseDenseHead, BBoxTestMixin):
-    """Objects as Points Head. CenterHead use center_point to indicate object's
-    position. Paper link <https://arxiv.org/abs/1904.07850>
+class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
+    """Parsing Table Structures in the Wild Head. CycleCenterHead use center_point to indicate object's
+    position. Paper link <https://arxiv.org/pdf/2109.02199.pdf>
 
     Args:
         in_channel (int): Number of channel in the input feature map.
@@ -42,19 +42,27 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         loss_center_heatmap=dict(type="GaussianFocalLoss", loss_weight=1.0),
         loss_wh=dict(type="L1Loss", loss_weight=0.1),
         loss_offset=dict(type="L1Loss", loss_weight=1.0),
+        loss_c2v=dict(type="L1Loss", loss_weight=1.0),
+        loss_v2c=dict(type="L1Loss", loss_weight=0.5),
+        # loss_pairing=dict(type="PairingLoss", loss_weight=1.0),
         train_cfg=None,
         test_cfg=None,
         init_cfg=None,
     ):
-        super(CenterNetHead, self).__init__(init_cfg)
+        super(CycleCenterNetHeadL1, self).__init__(init_cfg)
         self.num_classes = num_classes
         self.heatmap_head = self._build_head(in_channel, feat_channel, num_classes)
         self.wh_head = self._build_head(in_channel, feat_channel, 2)
         self.offset_head = self._build_head(in_channel, feat_channel, 2)
+        self.center2vertex_head = self._build_head(in_channel, feat_channel, 8)
+        self.vertex2center_head = self._build_head(in_channel, feat_channel, 8)
 
         self.loss_center_heatmap = build_loss(loss_center_heatmap)
         self.loss_wh = build_loss(loss_wh)
         self.loss_offset = build_loss(loss_offset)
+        # self.loss_pairing = build_loss(loss_pairing)
+        self.loss_c2v = build_loss(loss_c2v)
+        self.loss_v2c = build_loss(loss_v2c)
 
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
@@ -73,7 +81,7 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         """Initialize weights of the head."""
         bias_init = bias_init_with_prob(0.1)
         self.heatmap_head[-1].bias.data.fill_(bias_init)
-        for head in [self.wh_head, self.offset_head]:
+        for head in [self.wh_head, self.offset_head, self.center2vertex_head, self.vertex2center_head]:
             for m in head.modules():
                 if isinstance(m, nn.Conv2d):
                     normal_init(m, std=0.001)
@@ -91,7 +99,7 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
             wh_preds (List[Tensor]): wh predicts for all levels, the channels
                 number is 2.
             offset_preds (List[Tensor]): offset predicts for all levels, the
-               channels number is 2.
+                channels number is 2.
         """
         return multi_apply(self.forward_single, feats)
 
@@ -103,28 +111,45 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
 
         Returns:
             center_heatmap_pred (Tensor): center predict heatmaps, the
-               channels number is num_classes.
+                channels number is num_classes.
             wh_pred (Tensor): wh predicts, the channels number is 2.
             offset_pred (Tensor): offset predicts, the channels number is 2.
         """
         center_heatmap_pred = self.heatmap_head(feat).sigmoid()
         wh_pred = self.wh_head(feat)
         offset_pred = self.offset_head(feat)
-        return center_heatmap_pred, wh_pred, offset_pred
+        center2vertex_pred = self.center2vertex_head(feat)
+        vertex2center_pred = self.vertex2center_head(feat)
+        return center_heatmap_pred, wh_pred, offset_pred, center2vertex_pred, vertex2center_pred
 
-    @force_fp32(apply_to=("center_heatmap_preds", "wh_preds", "offset_preds"))
+    @force_fp32(
+        apply_to=("center_heatmap_preds", "wh_preds", "offset_preds", "center2vertex_pred", "vertex2center_pred")
+    )
     def loss(
-        self, center_heatmap_preds, wh_preds, offset_preds, gt_bboxes, gt_labels, img_metas, gt_bboxes_ignore=None
+        self,
+        center_heatmap_preds,
+        wh_preds,
+        offset_preds,
+        center2vertex_pred,
+        vertex2center_pred,
+        gt_bboxes,
+        gt_labels,
+        img_metas,
+        gt_bboxes_ignore=None,
     ):
         """Compute losses of the head.
 
         Args:
             center_heatmap_preds (list[Tensor]): center predict heatmaps for
-               all levels with shape (B, num_classes, H, W).
+                all levels with shape (B, num_classes, H, W).
             wh_preds (list[Tensor]): wh predicts for all levels with
-               shape (B, 2, H, W).
+                shape (B, 2, H, W).
             offset_preds (list[Tensor]): offset predicts for all levels
-               with shape (B, 2, H, W).
+                with shape (B, 2, H, W).
+            center2vertex_pred (list[Tensor]): center2vertex predicts for all levels
+                with shape (B, 8, H, W).
+            vertex2center_pred (list[Tensor]): vertex2center predicts for all levels
+                with shape (B, 8, H, W).
             gt_bboxes (list[Tensor]): Ground truth bboxes for each image with
                 shape (num_gts, 4) in [tl_x, tl_y, br_x, br_y] format.
             gt_labels (list[Tensor]): class indices corresponding to each box.
@@ -139,10 +164,19 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
                 - loss_wh (Tensor): loss of hw heatmap
                 - loss_offset (Tensor): loss of offset heatmap.
         """
-        assert len(center_heatmap_preds) == len(wh_preds) == len(offset_preds) == 1
+        assert (
+            len(center_heatmap_preds)
+            == len(wh_preds)
+            == len(offset_preds)
+            == len(center2vertex_pred)
+            == len(vertex2center_pred)
+            == 1
+        )
         center_heatmap_pred = center_heatmap_preds[0]
         wh_pred = wh_preds[0]
         offset_pred = offset_preds[0]
+        center2vertex_pred = center2vertex_pred[0]
+        vertex2center_pred = vertex2center_pred[0]
 
         target_result, avg_factor = self.get_targets(
             gt_bboxes, gt_labels, center_heatmap_pred.shape, img_metas[0]["pad_shape"]
@@ -152,6 +186,9 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         wh_target = target_result["wh_target"]
         offset_target = target_result["offset_target"]
         wh_offset_target_weight = target_result["wh_offset_target_weight"]
+        center2vertex_target = target_result["center2vertex_target"]
+        vertex2center_target = target_result["vertex2center_target"]
+        c2v_v2c_target_weight = target_result["c2v_v2c_target_weight"]
 
         # Since the channel of wh_target and offset_target is 2, the avg_factor
         # of loss_center_heatmap is always 1/2 of loss_wh and loss_offset.
@@ -162,7 +199,29 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         loss_offset = self.loss_offset(
             offset_pred, offset_target, wh_offset_target_weight, avg_factor=avg_factor * 2
         )
-        return dict(loss_center_heatmap=loss_center_heatmap, loss_wh=loss_wh, loss_offset=loss_offset)
+        # loss_pairing = self.loss_pairing(
+        #     center2vertex_pred,
+        #     vertex2center_pred,
+        #     center2vertex_target,
+        #     vertex2center_target,
+        #     ...,
+        #     avg_factor=avg_factor,
+        # )
+        loss_c2v = self.loss_c2v(
+            center2vertex_pred, center2vertex_target, c2v_v2c_target_weight, avg_factor=avg_factor * 8
+        )
+        loss_v2c = self.loss_v2c(
+            vertex2center_pred, vertex2center_target, c2v_v2c_target_weight, avg_factor=avg_factor * 8
+        )
+
+        return dict(
+            loss_center_heatmap=loss_center_heatmap,
+            loss_wh=loss_wh,
+            loss_offset=loss_offset,
+            # loss_pairing=loss_pairing,
+            loss_c2v=loss_c2v,
+            loss_v2c=loss_v2c,
+        )
 
     def get_targets(self, gt_bboxes, gt_labels, feat_shape, img_shape):
         """Compute regression and classification targets in multiple images.
@@ -185,6 +244,10 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
                    (B, 2, H, W).
                - wh_offset_target_weight (Tensor): weights of wh and offset \
                    predict, shape (B, 2, H, W).
+               - center2vertex_target (Tensor): targets of center2vertex predict, shape \
+                   (B, 8, H, W).
+               - vertex2center_target (Tensor): targets of vertex2center predict, shape \
+                   (B, 8, H, W).
         """
         img_h, img_w = img_shape[:2]
         bs, _, feat_h, feat_w = feat_shape
@@ -196,6 +259,9 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         wh_target = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
         offset_target = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
         wh_offset_target_weight = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
+        center2vertex_target = gt_bboxes[-1].new_zeros([bs, 8, feat_h, feat_w])
+        vertex2center_target = gt_bboxes[-1].new_zeros([bs, 8, feat_h, feat_w])
+        c2v_v2c_target_weight = gt_bboxes[-1].new_zeros([bs, 8, feat_h, feat_w])
 
         for batch_id in range(bs):
             gt_bbox = gt_bboxes[batch_id]
@@ -222,17 +288,51 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
 
                 wh_offset_target_weight[batch_id, :, cty_int, ctx_int] = 1
 
+                center2vertex_target[batch_id, 0, cty_int, ctx_int] = -scale_box_w / 2
+                center2vertex_target[batch_id, 1, cty_int, ctx_int] = -scale_box_h / 2
+                center2vertex_target[batch_id, 2, cty_int, ctx_int] = scale_box_w / 2
+                center2vertex_target[batch_id, 3, cty_int, ctx_int] = -scale_box_h / 2
+                center2vertex_target[batch_id, 4, cty_int, ctx_int] = scale_box_w / 2
+                center2vertex_target[batch_id, 5, cty_int, ctx_int] = scale_box_h / 2
+                center2vertex_target[batch_id, 6, cty_int, ctx_int] = -scale_box_w / 2
+                center2vertex_target[batch_id, 7, cty_int, ctx_int] = scale_box_h / 2
+
+                vertex2center_target[batch_id, 0, cty_int, ctx_int] = scale_box_w / 2
+                vertex2center_target[batch_id, 1, cty_int, ctx_int] = scale_box_h / 2
+                vertex2center_target[batch_id, 2, cty_int, ctx_int] = -scale_box_w / 2
+                vertex2center_target[batch_id, 3, cty_int, ctx_int] = scale_box_h / 2
+                vertex2center_target[batch_id, 4, cty_int, ctx_int] = -scale_box_w / 2
+                vertex2center_target[batch_id, 5, cty_int, ctx_int] = -scale_box_h / 2
+                vertex2center_target[batch_id, 6, cty_int, ctx_int] = scale_box_w / 2
+                vertex2center_target[batch_id, 7, cty_int, ctx_int] = -scale_box_h / 2
+
+                c2v_v2c_target_weight[batch_id, :, cty_int, ctx_int] = 1
         avg_factor = max(1, center_heatmap_target.eq(1).sum())
         target_result = dict(
             center_heatmap_target=center_heatmap_target,
             wh_target=wh_target,
             offset_target=offset_target,
             wh_offset_target_weight=wh_offset_target_weight,
+            center2vertex_target=center2vertex_target,
+            vertex2center_target=vertex2center_target,
+            c2v_v2c_target_weight=c2v_v2c_target_weight,
         )
         return target_result, avg_factor
 
-    @force_fp32(apply_to=("center_heatmap_preds", "wh_preds", "offset_preds"))
-    def get_bboxes(self, center_heatmap_preds, wh_preds, offset_preds, img_metas, rescale=True, with_nms=False):
+    @force_fp32(
+        apply_to=("center_heatmap_preds", "wh_preds", "offset_preds", "center2vertex_preds", "vertex2center_preds")
+    )
+    def get_bboxes(
+        self,
+        center_heatmap_preds,
+        wh_preds,
+        offset_preds,
+        center2vertex_preds,
+        vertex2center_preds,
+        img_metas,
+        rescale=True,
+        with_nms=False,
+    ):
         """Transform network output for a batch into bbox predictions.
 
         Args:
@@ -242,6 +342,10 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
                 shape (B, 2, H, W).
             offset_preds (list[Tensor]): Offset predicts for all levels
                 with shape (B, 2, H, W).
+            center2vertex_pred (list[Tensor]): center2vertex predicts for all levels
+                with shape (B, 8, H, W).
+            vertex2center_pred (list[Tensor]): vertex2center predicts for all levels
+                with shape (B, 8, H, W).
             img_metas (list[dict]): Meta information of each image, e.g.,
                 image size, scaling factor, etc.
             rescale (bool): If True, return boxes in original image space.
@@ -257,7 +361,17 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
                 each element represents the class label of the corresponding
                 box.
         """
-        assert len(center_heatmap_preds) == len(wh_preds) == len(offset_preds) == 1
+        assert (
+            len(center_heatmap_preds)
+            == len(wh_preds)
+            == len(offset_preds)
+            == len(center2vertex_preds)
+            == len(vertex2center_preds)
+            == 1
+        )
+        diff = (center2vertex_preds[0] - vertex2center_preds[0]) / 2
+        wh_preds[0][:, 0, ...] = (-diff[:, 0, ...] + diff[:, 2, ...] + diff[:, 4, ...] - diff[:, 6, ...]) / 2
+        wh_preds[0][:, 1, ...] = (-diff[:, 1, ...] - diff[:, 3, ...] + diff[:, 5, ...] - diff[:, 7, ...]) / 2
         result_list = []
         for img_id in range(len(img_metas)):
             result_list.append(
@@ -273,7 +387,13 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         return result_list
 
     def _get_bboxes_single(
-        self, center_heatmap_pred, wh_pred, offset_pred, img_meta, rescale=False, with_nms=True
+        self,
+        center_heatmap_pred,
+        wh_pred,
+        offset_pred,
+        img_meta,
+        rescale=False,
+        with_nms=True,
     ):
         """Transform outputs of a single image into bbox results.
 
@@ -284,6 +404,10 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
                 (1, num_classes, H, W).
             offset_pred (Tensor): Offset for current level with shape
                 (1, corner_offset_channels, H, W).
+            # center2vertex_pred (list[Tensor]): center2vertex predicts for all levels
+            #     with shape (1, 8, H, W).
+            # vertex2center_pred (list[Tensor]): vertex2center predicts for all levels
+            #     with shape (1, 8, H, W).
             img_meta (dict): Meta information of current image, e.g.,
                 image size, scaling factor, etc.
             rescale (bool): If True, return boxes in original image space.
