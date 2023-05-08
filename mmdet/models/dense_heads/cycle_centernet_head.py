@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import torch
 import torch.nn as nn
+from numpy import pi, exp
 from mmcv.cnn import bias_init_with_prob, normal_init
 from mmcv.ops import batched_nms
 from mmcv.runner import force_fp32
@@ -242,17 +243,27 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         #     ...,
         #     avg_factor=avg_factor,
         # )
+        c2v_v2c_target_weight = self._dynamic_weighing(
+            gt_bboxes,
+            center_heatmap_pred.shape,
+            img_metas[0]["pad_shape"],
+            center2vertex_pred,
+            vertex2center_pred,
+            center2vertex_target,
+            center2vertex_target,
+            c2v_v2c_target_weight,
+        )
         loss_c2v = self.loss_c2v(
             center2vertex_pred,
             center2vertex_target,
             c2v_v2c_target_weight,
-            avg_factor=avg_factor * 8,  # 8,
+            avg_factor=avg_factor * 8,
         )
         loss_v2c = self.loss_v2c(
             vertex2center_pred,
             vertex2center_target,
             c2v_v2c_target_weight,
-            avg_factor=avg_factor * 8,  # 8,
+            avg_factor=avg_factor * 8,
         )
 
         return dict(
@@ -263,6 +274,141 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
             loss_c2v=loss_c2v,
             loss_v2c=loss_v2c,
         )
+
+    def _dynamic_weighing(
+        self,
+        gt_bboxes,
+        feat_shape,
+        img_shape,
+        c2v_pred,
+        v2c_pred,
+        c2v_target,
+        v2c_target,
+        c2v_v2c_target_weight,
+    ):
+        img_h, img_w = img_shape[:2]
+        bs, _, feat_h, feat_w = feat_shape
+
+        width_ratio = float(feat_w / img_w)
+        height_ratio = float(feat_h / img_h)
+
+        for batch_id in range(bs):
+            gt_bbox = gt_bboxes[batch_id]
+            center_x = (gt_bbox[:, [0]] + gt_bbox[:, [2]]) * width_ratio / 2
+            center_y = (gt_bbox[:, [1]] + gt_bbox[:, [3]]) * height_ratio / 2
+            gt_centers = torch.cat((center_x, center_y), dim=1)
+
+            for j, ct in enumerate(gt_centers):
+                ctx_int, cty_int = ct.int()
+                tl_x, tl_y = (
+                    gt_bbox[j][0] * width_ratio,
+                    gt_bbox[j][1] * height_ratio,
+                )
+                tr_x, tr_y = (
+                    gt_bbox[j][2] * width_ratio,
+                    gt_bbox[j][1] * height_ratio,
+                )
+                br_x, br_y = (
+                    gt_bbox[j][2] * width_ratio,
+                    gt_bbox[j][3] * height_ratio,
+                )
+                bl_x, bl_y = (
+                    gt_bbox[j][0] * width_ratio,
+                    gt_bbox[j][3] * height_ratio,
+                )
+
+                tl_x_int, tl_y_int = int(tl_x), int(tl_y)
+                tr_x_int, tr_y_int = int(tr_x), int(tr_y)
+                br_x_int, br_y_int = int(br_x), int(br_y)
+                bl_x_int, bl_y_int = int(bl_x), int(bl_y)
+
+                tl_x_int = tl_x_int if 0 <= tl_x_int else 0
+                tr_x_int = tr_x_int if 0 <= tr_x_int else 0
+                br_x_int = br_x_int if 0 <= br_x_int else 0
+                bl_x_int = bl_x_int if 0 <= bl_x_int else 0
+                tl_x_int = tl_x_int if tl_x_int < feat_w else feat_w - 1
+                tr_x_int = tr_x_int if tr_x_int < feat_w else feat_w - 1
+                br_x_int = br_x_int if br_x_int < feat_w else feat_w - 1
+                bl_x_int = bl_x_int if bl_x_int < feat_w else feat_w - 1
+                tl_y_int = tl_y_int if 0 <= tl_y_int else 0
+                tr_y_int = tr_y_int if 0 <= tr_y_int else 0
+                br_y_int = br_y_int if 0 <= br_y_int else 0
+                bl_y_int = bl_y_int if 0 <= bl_y_int else 0
+                tl_y_int = tl_y_int if tl_y_int < feat_h else feat_h - 1
+                tr_y_int = tr_y_int if tr_y_int < feat_h else feat_h - 1
+                br_y_int = br_y_int if br_y_int < feat_h else feat_h - 1
+                bl_y_int = bl_y_int if bl_y_int < feat_h else feat_h - 1
+
+                ctx, cty = ct
+                for idx, v_x_y in enumerate(
+                    (
+                        (tl_x_int, tl_y_int),
+                        (tr_x_int, tr_y_int),
+                        (br_x_int, br_y_int),
+                        (bl_x_int, bl_y_int),
+                    )
+                ):
+                    v_x_int, v_y_int = v_x_y
+                    D_cv = min(
+                        torch.tensor(1.0),
+                        (
+                            torch.abs(
+                                c2v_pred[batch_id, 2 * idx, cty_int, ctx_int]
+                                - c2v_target[
+                                    batch_id, 2 * idx, cty_int, ctx_int
+                                ]
+                            )
+                            + torch.abs(
+                                v2c_pred[batch_id, 2 * idx, v_y_int, v_x_int]
+                                - v2c_target[
+                                    batch_id, 2 * idx, v_y_int, v_x_int
+                                ]
+                            )
+                        )
+                        / torch.abs(
+                            c2v_target[batch_id, 2 * idx, cty_int, ctx_int]
+                        ),
+                    )
+                    w = 1 - torch.exp(-pi * D_cv)
+                    c2v_v2c_target_weight[
+                        batch_id, 2 * idx, cty_int, ctx_int
+                    ] += w
+                    c2v_v2c_target_weight[
+                        batch_id, 2 * idx, v_y_int, v_x_int
+                    ] += w
+                    D_cv = min(
+                        torch.tensor(1.0),
+                        (
+                            torch.abs(
+                                c2v_pred[
+                                    batch_id, 2 * idx + 1, cty_int, ctx_int
+                                ]
+                                - c2v_target[
+                                    batch_id, 2 * idx + 1, cty_int, ctx_int
+                                ]
+                            )
+                            + torch.abs(
+                                v2c_pred[
+                                    batch_id, 2 * idx + 1, v_y_int, v_x_int
+                                ]
+                                - v2c_target[
+                                    batch_id, 2 * idx + 1, v_y_int, v_x_int
+                                ]
+                            )
+                        )
+                        / torch.abs(
+                            c2v_target[batch_id, 2 * idx + 1, cty_int, ctx_int]
+                        ),
+                    )
+                    w = 1 - torch.exp(-pi * D_cv)
+                    c2v_v2c_target_weight[
+                        batch_id, 2 * idx + 1, cty_int, ctx_int
+                    ] += w
+                    c2v_v2c_target_weight[
+                        batch_id, 2 * idx + 1, v_y_int, v_x_int
+                    ] += w
+
+        return c2v_v2c_target_weight
 
     def get_targets(self, gt_bboxes, gt_labels, feat_shape, img_shape):
         """Compute regression and classification targets in multiple images.
