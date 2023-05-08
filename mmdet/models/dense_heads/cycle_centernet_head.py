@@ -246,13 +246,13 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
             center2vertex_pred,
             center2vertex_target,
             c2v_v2c_target_weight,
-            avg_factor=avg_factor * 8,
+            avg_factor=avg_factor * 8,  # 8,
         )
         loss_v2c = self.loss_v2c(
             vertex2center_pred,
             vertex2center_target,
             c2v_v2c_target_weight,
-            avg_factor=avg_factor * 8,
+            avg_factor=avg_factor * 8,  # 8,
         )
 
         return dict(
@@ -500,23 +500,23 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         #     - diff[:, 7, ...]
         # ) / 2
         wh_preds[0][:, 0, ...] = (
-            -center2vertex_preds[:, 0, ...]
-            + center2vertex_preds[:, 2, ...]
-            + center2vertex_preds[:, 4, ...]
-            - center2vertex_preds[:, 6, ...]
+            -center2vertex_preds[0][:, 0, ...]
+            + center2vertex_preds[0][:, 2, ...]
+            + center2vertex_preds[0][:, 4, ...]
+            - center2vertex_preds[0][:, 6, ...]
         ) / 2
         wh_preds[0][:, 1, ...] = (
-            -center2vertex_preds[:, 1, ...]
-            - center2vertex_preds[:, 3, ...]
-            + center2vertex_preds[:, 5, ...]
-            - center2vertex_preds[:, 7, ...]
+            -center2vertex_preds[0][:, 1, ...]
+            - center2vertex_preds[0][:, 3, ...]
+            + center2vertex_preds[0][:, 5, ...]
+            - center2vertex_preds[0][:, 7, ...]
         ) / 2
         result_list = []
         for img_id in range(len(img_metas)):
             result_list.append(
                 self._get_bboxes_single(
                     center_heatmap_preds[0][
-                        img_id : img_id + 1, 0, ...
+                        img_id : img_id + 1, 0:1, ...
                     ],  ### 000!!!!
                     wh_preds[0][img_id : img_id + 1, ...],
                     offset_preds[0][img_id : img_id + 1, ...],
