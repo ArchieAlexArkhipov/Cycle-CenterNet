@@ -385,16 +385,16 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
                 # wh_target[batch_id, 1, cty_int, ctx_int] = scale_box_h
 
                 offset_target[batch_id, 0, cty_int, ctx_int] = ctx - ctx_int
-                offset_target[batch_id, 0, tl_x_int, tl_y_int] = tl_x - tl_x_int
-                offset_target[batch_id, 0, tr_x_int, tr_y_int] = tr_x - tr_x_int
-                offset_target[batch_id, 0, br_x_int, br_y_int] = br_x - br_x_int
-                offset_target[batch_id, 0, bl_x_int, bl_y_int] = bl_x - bl_x_int
+                offset_target[batch_id, 0, tl_y_int, tl_x_int] = tl_x - tl_x_int
+                offset_target[batch_id, 0, tr_y_int, tr_x_int] = tr_x - tr_x_int
+                offset_target[batch_id, 0, br_y_int, br_x_int] = br_x - br_x_int
+                offset_target[batch_id, 0, bl_y_int, bl_x_int] = bl_x - bl_x_int
 
                 offset_target[batch_id, 1, cty_int, ctx_int] = cty - cty_int
-                offset_target[batch_id, 1, tl_x_int, tl_y_int] = tl_y - tl_y_int
-                offset_target[batch_id, 1, tr_x_int, tr_y_int] = tr_y - tr_y_int
-                offset_target[batch_id, 1, br_x_int, br_y_int] = br_y - br_y_int
-                offset_target[batch_id, 1, bl_x_int, bl_y_int] = bl_y - bl_y_int
+                offset_target[batch_id, 1, tl_y_int, tl_x_int] = tl_y - tl_y_int
+                offset_target[batch_id, 1, tr_y_int, tr_x_int] = tr_y - tr_y_int
+                offset_target[batch_id, 1, br_y_int, br_x_int] = br_y - br_y_int
+                offset_target[batch_id, 1, bl_y_int, bl_x_int] = bl_y - bl_y_int
 
                 wh_offset_target_weight[batch_id, :, cty_int, ctx_int] = 1
 
@@ -407,16 +407,21 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
                 c2v_target[batch_id, 6, cty_int, ctx_int] = -scale_box_w / 2
                 c2v_target[batch_id, 7, cty_int, ctx_int] = scale_box_h / 2
 
-                v2c_target[batch_id, 0, tl_x_int, tl_y_int] = scale_box_w / 2
-                v2c_target[batch_id, 1, tl_x_int, tl_y_int] = scale_box_h / 2
-                v2c_target[batch_id, 2, tr_x_int, tr_y_int] = -scale_box_w / 2
-                v2c_target[batch_id, 3, tr_x_int, tr_y_int] = scale_box_h / 2
-                v2c_target[batch_id, 4, br_x_int, br_y_int] = -scale_box_w / 2
-                v2c_target[batch_id, 5, br_x_int, br_y_int] = -scale_box_h / 2
-                v2c_target[batch_id, 6, bl_x_int, bl_y_int] = scale_box_w / 2
-                v2c_target[batch_id, 7, bl_x_int, bl_y_int] = -scale_box_h / 2
+                v2c_target[batch_id, 0, tl_y_int, tl_x_int] = scale_box_w / 2
+                v2c_target[batch_id, 1, tl_y_int, tl_x_int] = scale_box_h / 2
+                v2c_target[batch_id, 2, tr_y_int, tr_x_int] = -scale_box_w / 2
+                v2c_target[batch_id, 3, tr_y_int, tr_x_int] = scale_box_h / 2
+                v2c_target[batch_id, 4, br_y_int, br_x_int] = -scale_box_w / 2
+                v2c_target[batch_id, 5, br_y_int, br_x_int] = -scale_box_h / 2
+                v2c_target[batch_id, 6, bl_y_int, bl_x_int] = scale_box_w / 2
+                v2c_target[batch_id, 7, bl_y_int, bl_x_int] = -scale_box_h / 2
 
                 c2v_v2c_target_weight[batch_id, :, cty_int, ctx_int] = 1
+                c2v_v2c_target_weight[batch_id, :, tl_y_int, tl_x_int] = 1
+                c2v_v2c_target_weight[batch_id, :, tr_y_int, tr_x_int] = 1
+                c2v_v2c_target_weight[batch_id, :, br_y_int, br_x_int] = 1
+                c2v_v2c_target_weight[batch_id, :, bl_y_int, bl_x_int] = 1
+
         avg_factor = max(1, center_heatmap_target.eq(1).sum())
         target_result = dict(
             center_heatmap_target=center_heatmap_target,
