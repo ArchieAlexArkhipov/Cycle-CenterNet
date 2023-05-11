@@ -486,7 +486,6 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         """
         assert (
             len(center_heatmap_preds)
-            # == len(wh_preds)
             == len(offset_preds)
             == len(center2vertex_preds)
             == len(vertex2center_preds)
@@ -516,7 +515,7 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
             -center2vertex_preds[0][:, 1, ...]
             - center2vertex_preds[0][:, 3, ...]
             + center2vertex_preds[0][:, 5, ...]
-            - center2vertex_preds[0][:, 7, ...]
+            + center2vertex_preds[0][:, 7, ...]
         ) / 2
         result_list = []
         for img_id in range(len(img_metas)):
