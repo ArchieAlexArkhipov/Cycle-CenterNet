@@ -46,11 +46,9 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         feat_channel,
         num_classes,
         loss_center_heatmap=dict(type="GaussianFocalLoss", loss_weight=1.0),
-        # loss_wh=dict(type="L1Loss", loss_weight=0.1),
         loss_offset=dict(type="L1Loss", loss_weight=1.0),
         loss_c2v=dict(type="L1Loss", loss_weight=1.0),
         loss_v2c=dict(type="L1Loss", loss_weight=0.5),
-        # loss_pairing=dict(type="PairingLoss", loss_weight=1.0),
         train_cfg=None,
         test_cfg=None,
         init_cfg=None,
@@ -58,15 +56,12 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         super(CycleCenterNetHeadL1, self).__init__(init_cfg)
         self.num_classes = num_classes
         self.heatmap_head = self._build_head(in_channel, feat_channel, 2 * num_classes)
-        # self.wh_head = self._build_head(in_channel, feat_channel, 2)
         self.offset_head = self._build_head(in_channel, feat_channel, 2)
         self.center2vertex_head = self._build_head(in_channel, feat_channel, 8)
         self.vertex2center_head = self._build_head(in_channel, feat_channel, 8)
 
         self.loss_center_heatmap = build_loss(loss_center_heatmap)
-        # self.loss_wh = build_loss(loss_wh)
         self.loss_offset = build_loss(loss_offset)
-        # self.loss_pairing = build_loss(loss_pairing)
         self.loss_c2v = build_loss(loss_c2v)
         self.loss_v2c = build_loss(loss_v2c)
 
@@ -88,7 +83,6 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         bias_init = bias_init_with_prob(0.1)
         self.heatmap_head[-1].bias.data.fill_(bias_init)
         for head in [
-            # self.wh_head,
             self.offset_head,
             self.center2vertex_head,
             self.vertex2center_head,
@@ -127,13 +121,11 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
             offset_pred (Tensor): offset predicts, the channels number is 2.
         """
         center_heatmap_pred = self.heatmap_head(feat).sigmoid()
-        # wh_pred = self.wh_head(feat)
         offset_pred = self.offset_head(feat)
         center2vertex_pred = self.center2vertex_head(feat)
         vertex2center_pred = self.vertex2center_head(feat)
         return (
             center_heatmap_pred,
-            # wh_pred,
             offset_pred,
             center2vertex_pred,
             vertex2center_pred,
@@ -187,7 +179,6 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         """
         assert (
             len(center_heatmap_preds)
-            # == len(wh_preds)
             == len(offset_preds)
             == len(center2vertex_pred)
             == len(vertex2center_pred)
@@ -208,7 +199,6 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         )
 
         center_heatmap_target = target_result["center_heatmap_target"]
-        # wh_target = target_result["wh_target"]
         offset_target = target_result["offset_target"]
         offset_target_weight = target_result["offset_target_weight"]
         center2vertex_target = target_result["center2vertex_target"]
@@ -287,74 +277,53 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
 
         for batch_id in range(bs):
             gt_bbox = gt_bboxes[batch_id]
-            gt_label = gt_labels[batch_id]
             center_x = (gt_bbox[:, [0]] + gt_bbox[:, [2]]) * width_ratio / 2
             center_y = (gt_bbox[:, [1]] + gt_bbox[:, [3]]) * height_ratio / 2
             gt_centers = torch.cat((center_x, center_y), dim=1)
-
+            vertexes = {}
             for j, ct in enumerate(gt_centers):
                 ctx_int, cty_int = ct.int()
                 ctx, cty = ct
                 scale_box_h = (gt_bbox[j][3] - gt_bbox[j][1]) * height_ratio
                 scale_box_w = (gt_bbox[j][2] - gt_bbox[j][0]) * width_ratio
+                scale_box_h_r = scale_box_h / 2
+                scale_box_w_r = scale_box_w / 2
                 radius = gaussian_radius([scale_box_h, scale_box_w], min_overlap=0.3)
                 radius = max(0, int(radius))
-                ind = gt_label[j]
                 gen_gaussian_target(
-                    center_heatmap_target[batch_id, ind],
+                    center_heatmap_target[batch_id, 0],
                     [ctx_int, cty_int],
                     radius,
                 )
 
-                tl_x, tl_y = (
-                    gt_bbox[j][0] * width_ratio,
-                    gt_bbox[j][1] * height_ratio,
+                tl_x, tr_x, br_x, bl_x = map(
+                    lambda x: x * width_ratio, (gt_bbox[j][0], gt_bbox[j][2], gt_bbox[j][2], gt_bbox[j][0])
                 )
-                tr_x, tr_y = (
-                    gt_bbox[j][2] * width_ratio,
-                    gt_bbox[j][1] * height_ratio,
+                tl_y, tr_y, br_y, bl_y = map(
+                    lambda x: x * height_ratio, (gt_bbox[j][1], gt_bbox[j][1], gt_bbox[j][3], gt_bbox[j][3])
                 )
-                br_x, br_y = (
-                    gt_bbox[j][2] * width_ratio,
-                    gt_bbox[j][3] * height_ratio,
+                tl_x_int, tl_y_int, tr_x_int, tr_y_int, br_x_int, br_y_int, bl_x_int, bl_y_int = map(
+                    int, (tl_x, tl_y, tr_x, tr_y, br_x, br_y, bl_x, bl_y)
                 )
-                bl_x, bl_y = (
-                    gt_bbox[j][0] * width_ratio,
-                    gt_bbox[j][3] * height_ratio,
+                tl_x_int, tr_x_int, br_x_int, bl_x_int = map(
+                    lambda x: feat_w - 1 if x >= feat_w else x if x >= 0 else 0,
+                    (tl_x_int, tr_x_int, br_x_int, bl_x_int),
                 )
-
-                tl_x_int, tl_y_int = int(tl_x), int(tl_y)
-                tr_x_int, tr_y_int = int(tr_x), int(tr_y)
-                br_x_int, br_y_int = int(br_x), int(br_y)
-                bl_x_int, bl_y_int = int(bl_x), int(bl_y)
-
-                tl_x_int = tl_x_int if 0 <= tl_x_int else 0
-                tr_x_int = tr_x_int if 0 <= tr_x_int else 0
-                br_x_int = br_x_int if 0 <= br_x_int else 0
-                bl_x_int = bl_x_int if 0 <= bl_x_int else 0
-                tl_x_int = tl_x_int if tl_x_int < feat_w else feat_w - 1
-                tr_x_int = tr_x_int if tr_x_int < feat_w else feat_w - 1
-                br_x_int = br_x_int if br_x_int < feat_w else feat_w - 1
-                bl_x_int = bl_x_int if bl_x_int < feat_w else feat_w - 1
-                tl_y_int = tl_y_int if 0 <= tl_y_int else 0
-                tr_y_int = tr_y_int if 0 <= tr_y_int else 0
-                br_y_int = br_y_int if 0 <= br_y_int else 0
-                bl_y_int = bl_y_int if 0 <= bl_y_int else 0
-                tl_y_int = tl_y_int if tl_y_int < feat_h else feat_h - 1
-                tr_y_int = tr_y_int if tr_y_int < feat_h else feat_h - 1
-                br_y_int = br_y_int if br_y_int < feat_h else feat_h - 1
-                bl_y_int = bl_y_int if bl_y_int < feat_h else feat_h - 1
+                tl_y_int, tr_y_int, br_y_int, bl_y_int = map(
+                    lambda x: feat_h - 1 if x >= feat_h else x if x >= 0 else 0,
+                    (tl_y_int, tr_y_int, br_y_int, bl_y_int),
+                )
+                vtx_gaus_r = max(0, int(gaussian_radius([scale_box_h_r, scale_box_w_r], min_overlap=0.3)))
                 for x, y in (
                     (tl_x_int, tl_y_int),
                     (tr_x_int, tr_y_int),
                     (br_x_int, br_y_int),
                     (bl_x_int, bl_y_int),
                 ):
-                    gen_gaussian_target(
-                        center_heatmap_target[batch_id, 2 * ind],
-                        [x, y],
-                        radius,
-                    )
+                    if (x, y) in vertexes:
+                        vertexes[(x, y)].append(vtx_gaus_r)
+                    else:
+                        vertexes[(x, y)] = [vtx_gaus_r]
 
                 offset_target[batch_id, 0, cty_int, ctx_int] = ctx - ctx_int
                 offset_target[batch_id, 0, tl_y_int, tl_x_int] = tl_x - tl_x_int
@@ -374,29 +343,23 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
                 offset_target_weight[batch_id, :, br_y_int, br_x_int] = 1
                 offset_target_weight[batch_id, :, bl_y_int, bl_x_int] = 1
 
-                c2v_target[batch_id, 0, cty_int, ctx_int] = -scale_box_w / 2
-                c2v_target[batch_id, 1, cty_int, ctx_int] = -scale_box_h / 2
-                c2v_target[batch_id, 2, cty_int, ctx_int] = scale_box_w / 2
-                c2v_target[batch_id, 3, cty_int, ctx_int] = -scale_box_h / 2
-                c2v_target[batch_id, 4, cty_int, ctx_int] = scale_box_w / 2
-                c2v_target[batch_id, 5, cty_int, ctx_int] = scale_box_h / 2
-                c2v_target[batch_id, 6, cty_int, ctx_int] = -scale_box_w / 2
-                c2v_target[batch_id, 7, cty_int, ctx_int] = scale_box_h / 2
+                c2v_target[batch_id, 0, cty_int, ctx_int] = -scale_box_w_r
+                c2v_target[batch_id, 1, cty_int, ctx_int] = -scale_box_h_r
+                c2v_target[batch_id, 2, cty_int, ctx_int] = scale_box_w_r
+                c2v_target[batch_id, 3, cty_int, ctx_int] = -scale_box_h_r
+                c2v_target[batch_id, 4, cty_int, ctx_int] = scale_box_w_r
+                c2v_target[batch_id, 5, cty_int, ctx_int] = scale_box_h_r
+                c2v_target[batch_id, 6, cty_int, ctx_int] = -scale_box_w_r
+                c2v_target[batch_id, 7, cty_int, ctx_int] = scale_box_h_r
 
-                v2c_target[batch_id, 0, tl_y_int, tl_x_int] = scale_box_w / 2
-                v2c_target[batch_id, 1, tl_y_int, tl_x_int] = scale_box_h / 2
-                v2c_target[batch_id, 2, tr_y_int, tr_x_int] = -scale_box_w / 2
-                v2c_target[batch_id, 3, tr_y_int, tr_x_int] = scale_box_h / 2
-                v2c_target[batch_id, 4, br_y_int, br_x_int] = -scale_box_w / 2
-                v2c_target[batch_id, 5, br_y_int, br_x_int] = -scale_box_h / 2
-                v2c_target[batch_id, 6, bl_y_int, bl_x_int] = scale_box_w / 2
-                v2c_target[batch_id, 7, bl_y_int, bl_x_int] = -scale_box_h / 2
-
-                # pairing_weight[batch_id, :, cty_int, ctx_int] = 1
-                # pairing_weight[batch_id, :, tl_y_int, tl_x_int] = 1
-                # pairing_weight[batch_id, :, tr_y_int, tr_x_int] = 1
-                # pairing_weight[batch_id, :, br_y_int, br_x_int] = 1
-                # pairing_weight[batch_id, :, bl_y_int, bl_x_int] = 1
+                v2c_target[batch_id, 0, tl_y_int, tl_x_int] = scale_box_w_r
+                v2c_target[batch_id, 1, tl_y_int, tl_x_int] = scale_box_h_r
+                v2c_target[batch_id, 2, tr_y_int, tr_x_int] = -scale_box_w_r
+                v2c_target[batch_id, 3, tr_y_int, tr_x_int] = scale_box_h_r
+                v2c_target[batch_id, 4, br_y_int, br_x_int] = -scale_box_w_r
+                v2c_target[batch_id, 5, br_y_int, br_x_int] = -scale_box_h_r
+                v2c_target[batch_id, 6, bl_y_int, bl_x_int] = scale_box_w_r
+                v2c_target[batch_id, 7, bl_y_int, bl_x_int] = -scale_box_h_r
 
                 # Pairing loss
                 for idx, v_x_int, v_y_int in (
@@ -423,11 +386,16 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
                         w = 1 - torch.exp(-pi * D_cv)
                         pairing_weight[batch_id, 2 * idx + k, cty_int, ctx_int] += w
                         pairing_weight[batch_id, 2 * idx + k, v_y_int, v_x_int] += w
+            for point, radiuses in vertexes.items():
+                gen_gaussian_target(
+                    heatmap=center_heatmap_target[batch_id, 1],
+                    center=list(point),
+                    radius=max(0, int(sum(radiuses) / len(radiuses))),
+                )
 
         avg_factor = max(1, center_heatmap_target.eq(1).sum())
         target_result = dict(
             center_heatmap_target=center_heatmap_target,
-            # wh_target=wh_target,
             offset_target=offset_target,
             offset_target_weight=offset_target_weight,
             center2vertex_target=c2v_target,
@@ -439,7 +407,6 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
     @force_fp32(
         apply_to=(
             "center_heatmap_preds",
-            # "wh_preds",
             "offset_preds",
             "center2vertex_preds",
             "vertex2center_preds",
@@ -448,7 +415,6 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
     def get_bboxes(
         self,
         center_heatmap_preds,
-        # wh_preds,
         offset_preds,
         center2vertex_preds,
         vertex2center_preds,
@@ -492,19 +458,7 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
             == 1
         )
         wh_preds = [torch.zeros_like(offset_preds[0])]
-        # diff = (center2vertex_preds[0] - vertex2center_preds[0]) / 2
-        # wh_preds[0][:, 0, ...] = (
-        #     -diff[:, 0, ...]
-        #     + diff[:, 2, ...]
-        #     + diff[:, 4, ...]
-        #     - diff[:, 6, ...]
-        # ) / 2
-        # wh_preds[0][:, 1, ...] = (
-        #     -diff[:, 1, ...]
-        #     - diff[:, 3, ...]
-        #     + diff[:, 5, ...]
-        #     - diff[:, 7, ...]
-        # ) / 2
+        # wh_preds_vc = [torch.ones_like(offset_preds[0]) * 5]
         wh_preds[0][:, 0, ...] = (
             -center2vertex_preds[0][:, 0, ...]
             + center2vertex_preds[0][:, 2, ...]
@@ -521,7 +475,7 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         for img_id in range(len(img_metas)):
             result_list.append(
                 self._get_bboxes_single(
-                    center_heatmap_preds[0][img_id : img_id + 1, 0:1, ...],  ### 000!!!!
+                    center_heatmap_preds[0][img_id : img_id + 1, 0:1, ...],
                     wh_preds[0][img_id : img_id + 1, ...],
                     offset_preds[0][img_id : img_id + 1, ...],
                     img_metas[img_id],
@@ -529,6 +483,18 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
                     with_nms=with_nms,
                 )
             )
+        # for img_id in range(len(img_metas)):
+        #     result_list.append(
+        #         self._get_bboxes_single(
+        #             center_heatmap_preds[0][img_id : img_id + 1, 1:2, ...],
+        #             wh_preds_vc[0][img_id : img_id + 1, ...],
+        #             offset_preds[0][img_id : img_id + 1, ...],
+        #             img_metas[img_id],
+        #             rescale=rescale,
+        #             with_nms=with_nms,
+        #         )
+        #     )
+        # )
         return result_list
 
     def _get_bboxes_single(
