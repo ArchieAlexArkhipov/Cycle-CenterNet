@@ -237,7 +237,8 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         )
 
     def get_targets(self, gt_bboxes, gt_labels, feat_shape, img_shape, c2v_pred, v2c_pred):
-        """Compute regression and classification targets in multiple images.
+        """Compute regression and classification targets in multiple images and
+        compute weight for Pairing Loss.
 
         Args:
             gt_bboxes (list[Tensor]): Ground truth bboxes for each image with
@@ -245,7 +246,9 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
             gt_labels (list[Tensor]): class indices corresponding to each box.
             feat_shape (list[int]): feature map shape with value [B, _, H, W]
             img_shape (list[int]): image shape in [h, w] format.
-
+            c2v_pred (list[Tensor]): center2vertex branch shape with value [B, 8, H, W]
+            v2c_pred (list[Tensor]): vertex2center branch shape with value [B, 8, H, W]
+            
         Returns:
             tuple[dict,float]: The float value is mean avg_factor, the dict has
                components below:
