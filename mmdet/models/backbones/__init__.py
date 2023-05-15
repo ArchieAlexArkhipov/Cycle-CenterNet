@@ -3,7 +3,6 @@ from .csp_darknet import CSPDarknet
 from .darknet import Darknet
 from .detectors_resnet import DetectoRS_ResNet
 from .detectors_resnext import DetectoRS_ResNeXt
-from .dla_custom import DLANetCustom
 from .dla_mmdet3d import DLANetMMDet3D
 from .efficientnet import EfficientNet
 from .hourglass import HourglassNet
@@ -39,6 +38,5 @@ __all__ = [
     "PyramidVisionTransformer",
     "PyramidVisionTransformerV2",
     "EfficientNet",
-    "DLANetCustom",
     "DLANetMMDet3D",
 ]
