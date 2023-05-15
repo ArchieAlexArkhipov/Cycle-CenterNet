@@ -8,8 +8,7 @@ from mmcv.runner import force_fp32
 from mmdet.core import multi_apply
 from mmdet.models import HEADS, build_loss
 from mmdet.models.utils import gaussian_radius, gen_gaussian_target
-from ..utils.gaussian_target import (get_local_maximum, get_topk_from_heatmap,
-                                     transpose_and_gather_feat)
+from ..utils.gaussian_target import get_local_maximum, get_topk_from_heatmap, transpose_and_gather_feat
 from .base_dense_head import BaseDenseHead
 from .dense_test_mixins import BBoxTestMixin
 
@@ -35,21 +34,21 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
             Default: None
     """
 
-    def __init__(self,
-                 in_channel,
-                 feat_channel,
-                 num_classes,
-                 loss_center_heatmap=dict(
-                     type='GaussianFocalLoss', loss_weight=1.0),
-                 loss_wh=dict(type='L1Loss', loss_weight=0.1),
-                 loss_offset=dict(type='L1Loss', loss_weight=1.0),
-                 train_cfg=None,
-                 test_cfg=None,
-                 init_cfg=None):
+    def __init__(
+        self,
+        in_channel,
+        feat_channel,
+        num_classes,
+        loss_center_heatmap=dict(type="GaussianFocalLoss", loss_weight=1.0),
+        loss_wh=dict(type="L1Loss", loss_weight=0.1),
+        loss_offset=dict(type="L1Loss", loss_weight=1.0),
+        train_cfg=None,
+        test_cfg=None,
+        init_cfg=None,
+    ):
         super(CenterNetHead, self).__init__(init_cfg)
         self.num_classes = num_classes
-        self.heatmap_head = self._build_head(in_channel, feat_channel,
-                                             num_classes)
+        self.heatmap_head = self._build_head(in_channel, feat_channel, num_classes)
         self.wh_head = self._build_head(in_channel, feat_channel, 2)
         self.offset_head = self._build_head(in_channel, feat_channel, 2)
 
@@ -66,7 +65,8 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         layer = nn.Sequential(
             nn.Conv2d(in_channel, feat_channel, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(feat_channel, out_channel, kernel_size=1))
+            nn.Conv2d(feat_channel, out_channel, kernel_size=1),
+        )
         return layer
 
     def init_weights(self):
@@ -112,15 +112,10 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         offset_pred = self.offset_head(feat)
         return center_heatmap_pred, wh_pred, offset_pred
 
-    @force_fp32(apply_to=('center_heatmap_preds', 'wh_preds', 'offset_preds'))
-    def loss(self,
-             center_heatmap_preds,
-             wh_preds,
-             offset_preds,
-             gt_bboxes,
-             gt_labels,
-             img_metas,
-             gt_bboxes_ignore=None):
+    @force_fp32(apply_to=("center_heatmap_preds", "wh_preds", "offset_preds"))
+    def loss(
+        self, center_heatmap_preds, wh_preds, offset_preds, gt_bboxes, gt_labels, img_metas, gt_bboxes_ignore=None
+    ):
         """Compute losses of the head.
 
         Args:
@@ -144,39 +139,30 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
                 - loss_wh (Tensor): loss of hw heatmap
                 - loss_offset (Tensor): loss of offset heatmap.
         """
-        assert len(center_heatmap_preds) == len(wh_preds) == len(
-            offset_preds) == 1
+        assert len(center_heatmap_preds) == len(wh_preds) == len(offset_preds) == 1
         center_heatmap_pred = center_heatmap_preds[0]
         wh_pred = wh_preds[0]
         offset_pred = offset_preds[0]
 
-        target_result, avg_factor = self.get_targets(gt_bboxes, gt_labels,
-                                                     center_heatmap_pred.shape,
-                                                     img_metas[0]['pad_shape'])
+        target_result, avg_factor = self.get_targets(
+            gt_bboxes, gt_labels, center_heatmap_pred.shape, img_metas[0]["pad_shape"]
+        )
 
-        center_heatmap_target = target_result['center_heatmap_target']
-        wh_target = target_result['wh_target']
-        offset_target = target_result['offset_target']
-        wh_offset_target_weight = target_result['wh_offset_target_weight']
+        center_heatmap_target = target_result["center_heatmap_target"]
+        wh_target = target_result["wh_target"]
+        offset_target = target_result["offset_target"]
+        wh_offset_target_weight = target_result["wh_offset_target_weight"]
 
         # Since the channel of wh_target and offset_target is 2, the avg_factor
         # of loss_center_heatmap is always 1/2 of loss_wh and loss_offset.
         loss_center_heatmap = self.loss_center_heatmap(
-            center_heatmap_pred, center_heatmap_target, avg_factor=avg_factor)
-        loss_wh = self.loss_wh(
-            wh_pred,
-            wh_target,
-            wh_offset_target_weight,
-            avg_factor=avg_factor * 2)
+            center_heatmap_pred, center_heatmap_target, avg_factor=avg_factor
+        )
+        loss_wh = self.loss_wh(wh_pred, wh_target, wh_offset_target_weight, avg_factor=avg_factor * 2)
         loss_offset = self.loss_offset(
-            offset_pred,
-            offset_target,
-            wh_offset_target_weight,
-            avg_factor=avg_factor * 2)
-        return dict(
-            loss_center_heatmap=loss_center_heatmap,
-            loss_wh=loss_wh,
-            loss_offset=loss_offset)
+            offset_pred, offset_target, wh_offset_target_weight, avg_factor=avg_factor * 2
+        )
+        return dict(loss_center_heatmap=loss_center_heatmap, loss_wh=loss_wh, loss_offset=loss_offset)
 
     def get_targets(self, gt_bboxes, gt_labels, feat_shape, img_shape):
         """Compute regression and classification targets in multiple images.
@@ -206,12 +192,10 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         width_ratio = float(feat_w / img_w)
         height_ratio = float(feat_h / img_h)
 
-        center_heatmap_target = gt_bboxes[-1].new_zeros(
-            [bs, self.num_classes, feat_h, feat_w])
+        center_heatmap_target = gt_bboxes[-1].new_zeros([bs, self.num_classes, feat_h, feat_w])
         wh_target = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
         offset_target = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
-        wh_offset_target_weight = gt_bboxes[-1].new_zeros(
-            [bs, 2, feat_h, feat_w])
+        wh_offset_target_weight = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
 
         for batch_id in range(bs):
             gt_bbox = gt_bboxes[batch_id]
@@ -225,12 +209,10 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
                 ctx, cty = ct
                 scale_box_h = (gt_bbox[j][3] - gt_bbox[j][1]) * height_ratio
                 scale_box_w = (gt_bbox[j][2] - gt_bbox[j][0]) * width_ratio
-                radius = gaussian_radius([scale_box_h, scale_box_w],
-                                         min_overlap=0.3)
+                radius = gaussian_radius([scale_box_h, scale_box_w], min_overlap=0.3)
                 radius = max(0, int(radius))
                 ind = gt_label[j]
-                gen_gaussian_target(center_heatmap_target[batch_id, ind],
-                                    [ctx_int, cty_int], radius)
+                gen_gaussian_target(center_heatmap_target[batch_id, ind], [ctx_int, cty_int], radius)
 
                 wh_target[batch_id, 0, cty_int, ctx_int] = scale_box_w
                 wh_target[batch_id, 1, cty_int, ctx_int] = scale_box_h
@@ -245,17 +227,12 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
             center_heatmap_target=center_heatmap_target,
             wh_target=wh_target,
             offset_target=offset_target,
-            wh_offset_target_weight=wh_offset_target_weight)
+            wh_offset_target_weight=wh_offset_target_weight,
+        )
         return target_result, avg_factor
 
-    @force_fp32(apply_to=('center_heatmap_preds', 'wh_preds', 'offset_preds'))
-    def get_bboxes(self,
-                   center_heatmap_preds,
-                   wh_preds,
-                   offset_preds,
-                   img_metas,
-                   rescale=True,
-                   with_nms=False):
+    @force_fp32(apply_to=("center_heatmap_preds", "wh_preds", "offset_preds"))
+    def get_bboxes(self, center_heatmap_preds, wh_preds, offset_preds, img_metas, rescale=True, with_nms=False):
         """Transform network output for a batch into bbox predictions.
 
         Args:
@@ -280,27 +257,24 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
                 each element represents the class label of the corresponding
                 box.
         """
-        assert len(center_heatmap_preds) == len(wh_preds) == len(
-            offset_preds) == 1
+        assert len(center_heatmap_preds) == len(wh_preds) == len(offset_preds) == 1
         result_list = []
         for img_id in range(len(img_metas)):
             result_list.append(
                 self._get_bboxes_single(
-                    center_heatmap_preds[0][img_id:img_id + 1, ...],
-                    wh_preds[0][img_id:img_id + 1, ...],
-                    offset_preds[0][img_id:img_id + 1, ...],
+                    center_heatmap_preds[0][img_id : img_id + 1, ...],
+                    wh_preds[0][img_id : img_id + 1, ...],
+                    offset_preds[0][img_id : img_id + 1, ...],
                     img_metas[img_id],
                     rescale=rescale,
-                    with_nms=with_nms))
+                    with_nms=with_nms,
+                )
+            )
         return result_list
 
-    def _get_bboxes_single(self,
-                           center_heatmap_pred,
-                           wh_pred,
-                           offset_pred,
-                           img_meta,
-                           rescale=False,
-                           with_nms=True):
+    def _get_bboxes_single(
+        self, center_heatmap_pred, wh_pred, offset_pred, img_meta, rescale=False, with_nms=True
+    ):
         """Transform outputs of a single image into bbox results.
 
         Args:
@@ -328,33 +302,25 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
             center_heatmap_pred,
             wh_pred,
             offset_pred,
-            img_meta['batch_input_shape'],
+            img_meta["batch_input_shape"],
             k=self.test_cfg.topk,
-            kernel=self.test_cfg.local_maximum_kernel)
+            kernel=self.test_cfg.local_maximum_kernel,
+        )
 
         det_bboxes = batch_det_bboxes.view([-1, 5])
         det_labels = batch_labels.view(-1)
 
-        batch_border = det_bboxes.new_tensor(img_meta['border'])[...,
-                                                                 [2, 0, 2, 0]]
+        batch_border = det_bboxes.new_tensor(img_meta["border"])[..., [2, 0, 2, 0]]
         det_bboxes[..., :4] -= batch_border
 
         if rescale:
-            det_bboxes[..., :4] /= det_bboxes.new_tensor(
-                img_meta['scale_factor'])
+            det_bboxes[..., :4] /= det_bboxes.new_tensor(img_meta["scale_factor"])
 
         if with_nms:
-            det_bboxes, det_labels = self._bboxes_nms(det_bboxes, det_labels,
-                                                      self.test_cfg)
+            det_bboxes, det_labels = self._bboxes_nms(det_bboxes, det_labels, self.test_cfg)
         return det_bboxes, det_labels
 
-    def decode_heatmap(self,
-                       center_heatmap_pred,
-                       wh_pred,
-                       offset_pred,
-                       img_shape,
-                       k=100,
-                       kernel=3):
+    def decode_heatmap(self, center_heatmap_pred, wh_pred, offset_pred, img_shape, k=100, kernel=3):
         """Transform outputs into detections raw bbox prediction.
 
         Args:
@@ -378,11 +344,9 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         height, width = center_heatmap_pred.shape[2:]
         inp_h, inp_w = img_shape
 
-        center_heatmap_pred = get_local_maximum(
-            center_heatmap_pred, kernel=kernel)
+        center_heatmap_pred = get_local_maximum(center_heatmap_pred, kernel=kernel)
 
-        *batch_dets, topk_ys, topk_xs = get_topk_from_heatmap(
-            center_heatmap_pred, k=k)
+        *batch_dets, topk_ys, topk_xs = get_topk_from_heatmap(center_heatmap_pred, k=k)
         batch_scores, batch_index, batch_topk_labels = batch_dets
 
         wh = transpose_and_gather_feat(wh_pred, batch_index)
@@ -395,16 +359,13 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         br_y = (topk_ys + wh[..., 1] / 2) * (inp_h / height)
 
         batch_bboxes = torch.stack([tl_x, tl_y, br_x, br_y], dim=2)
-        batch_bboxes = torch.cat((batch_bboxes, batch_scores[..., None]),
-                                 dim=-1)
+        batch_bboxes = torch.cat((batch_bboxes, batch_scores[..., None]), dim=-1)
         return batch_bboxes, batch_topk_labels
 
     def _bboxes_nms(self, bboxes, labels, cfg):
         if labels.numel() > 0:
             max_num = cfg.max_per_img
-            bboxes, keep = batched_nms(bboxes[:, :4], bboxes[:,
-                                                             -1].contiguous(),
-                                       labels, cfg.nms)
+            bboxes, keep = batched_nms(bboxes[:, :4], bboxes[:, -1].contiguous(), labels, cfg.nms)
             if max_num > 0:
                 bboxes = bboxes[:max_num]
                 labels = labels[keep][:max_num]
