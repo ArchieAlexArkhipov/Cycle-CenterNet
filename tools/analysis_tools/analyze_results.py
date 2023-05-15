@@ -41,9 +41,7 @@ def bbox_map_eval(det_result, annotation, nproc=4):
     else:
         bbox_det_result = [det_result]
     # mAP
-    iou_thrs = np.linspace(
-        0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True
-    )
+    iou_thrs = np.linspace(0.5, 0.95, int(np.round((0.95 - 0.5) / 0.05)) + 1, endpoint=True)
 
     processes = []
     workers = Pool(processes=nproc)
@@ -80,17 +78,13 @@ class ResultVisualizer:
             with the prediction result. Default: False.
     """
 
-    def __init__(
-        self, show=False, wait_time=0, score_thr=0, overlay_gt_pred=False
-    ):
+    def __init__(self, show=False, wait_time=0, score_thr=0, overlay_gt_pred=False):
         self.show = show
         self.wait_time = wait_time
         self.score_thr = score_thr
         self.overlay_gt_pred = overlay_gt_pred
 
-    def _save_image_gts_results(
-        self, dataset, results, performances, out_dir=None
-    ):
+    def _save_image_gts_results(self, dataset, results, performances, out_dir=None):
         """Display or save image with groung truths and predictions from a
         model.
 
@@ -155,18 +149,12 @@ class ResultVisualizer:
             topk = len(dataset) // 2
 
         if isinstance(results[0], dict):
-            good_samples, bad_samples = self.panoptic_evaluate(
-                dataset, results, topk=topk
-            )
+            good_samples, bad_samples = self.panoptic_evaluate(dataset, results, topk=topk)
         elif isinstance(results[0], list):
-            good_samples, bad_samples = self.detection_evaluate(
-                dataset, results, topk=topk
-            )
+            good_samples, bad_samples = self.detection_evaluate(dataset, results, topk=topk)
         elif isinstance(results[0], tuple):
             results_ = [result[0] for result in results]
-            good_samples, bad_samples = self.detection_evaluate(
-                dataset, results_, topk=topk
-            )
+            good_samples, bad_samples = self.detection_evaluate(dataset, results_, topk=topk)
         else:
             raise "The format of result is not supported yet. " "Current dict for panoptic segmentation and list " "or tuple for object detection are supported."
 
@@ -263,9 +251,7 @@ class ResultVisualizer:
                 dataset.file_client,
                 print_log=False,
             )
-            pq_results, classwise_results = pq_stat.pq_average(
-                dataset.categories, isthing=None
-            )
+            pq_results, classwise_results = pq_stat.pq_average(dataset.categories, isthing=None)
             pqs[i] = pq_results["pq"]
             prog_bar.update()
 
@@ -281,16 +267,10 @@ class ResultVisualizer:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="MMDet eval image prediction result for each"
-    )
+    parser = argparse.ArgumentParser(description="MMDet eval image prediction result for each")
     parser.add_argument("config", help="test config file path")
-    parser.add_argument(
-        "prediction_path", help="prediction path where test pkl result"
-    )
-    parser.add_argument(
-        "show_dir", help="directory where painted images will be saved"
-    )
+    parser.add_argument("prediction_path", help="prediction path where test pkl result")
+    parser.add_argument("show_dir", help="directory where painted images will be saved")
     parser.add_argument("--show", action="store_true", help="show results")
     parser.add_argument(
         "--wait-time",
@@ -302,8 +282,7 @@ def parse_args():
         "--topk",
         default=20,
         type=int,
-        help="saved Number of the highest topk "
-        "and lowest topk after index sorting",
+        help="saved Number of the highest topk " "and lowest topk after index sorting",
     )
     parser.add_argument(
         "--show-score-thr",
@@ -359,21 +338,15 @@ def main():
         "RepeatDataset",
         "ConcatDataset",
     ):
-        cfg.data.test.pipeline = get_loading_pipeline(
-            cfg.data.train.dataset.pipeline
-        )
+        cfg.data.test.pipeline = get_loading_pipeline(cfg.data.train.dataset.pipeline)
     else:
         cfg.data.test.pipeline = get_loading_pipeline(cfg.data.train.pipeline)
 
     dataset = build_dataset(cfg.data.test)
     outputs = mmcv.load(args.prediction_path)
 
-    result_visualizer = ResultVisualizer(
-        args.show, args.wait_time, args.show_score_thr, args.overlay_gt_pred
-    )
-    result_visualizer.evaluate_and_show(
-        dataset, outputs, topk=args.topk, show_dir=args.show_dir
-    )
+    result_visualizer = ResultVisualizer(args.show, args.wait_time, args.show_score_thr, args.overlay_gt_pred)
+    result_visualizer.evaluate_and_show(dataset, outputs, topk=args.topk, show_dir=args.show_dir)
 
 
 if __name__ == "__main__":
