@@ -41,7 +41,7 @@ from .yolact_head import YOLACTHead, YOLACTProtonet, YOLACTSegmHead
 from .yolo_head import YOLOV3Head
 from .yolof_head import YOLOFHead
 from .yolox_head import YOLOXHead
-from .cycle_centernet_head import CycleCenterNetHeadL1
+from .cycle_centernet_head import CycleCenterNetHead
 
 __all__ = [
     "AnchorFreeHead",
@@ -92,5 +92,5 @@ __all__ = [
     "Mask2FormerHead",
     "SOLOV2Head",
     "DDODHead",
-    "CycleCenterNetHeadL1",
+    "CycleCenterNetHead",
 ]

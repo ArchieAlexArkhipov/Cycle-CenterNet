@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import torch
 import torch.nn as nn
-from numpy import pi, exp
+from numpy import pi
 from mmcv.cnn import bias_init_with_prob, normal_init
 from mmcv.ops import batched_nms
 from mmcv.runner import force_fp32
@@ -9,26 +9,20 @@ from mmcv.runner import force_fp32
 from mmdet.core import multi_apply
 from mmdet.models import HEADS, build_loss
 from mmdet.models.utils import gaussian_radius, gen_gaussian_target
-from ..utils.gaussian_target import (
-    get_local_maximum,
-    get_topk_from_heatmap,
-    transpose_and_gather_feat,
-)
+from ..utils.gaussian_target import get_local_maximum, get_topk_from_heatmap, transpose_and_gather_feat
 from .base_dense_head import BaseDenseHead
 from .dense_test_mixins import BBoxTestMixin
 
 
 @HEADS.register_module()
-class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
+class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
     """Parsing Table Structures in the Wild Head. CycleCenterHead use
-    center_point to indicate object's position.
+    center point to indicate cell's position in a table.
     Paper link <https://arxiv.org/pdf/2109.02199.pdf>
 
     Args:
         in_channel (int): Number of channel in the input feature map.
         feat_channel (int): Number of channel in the intermediate feature map.
-        num_classes (int): Number of categories excluding the background
-            category.
         loss_center_heatmap (dict | None): Config of center heatmap loss.
             Default: GaussianFocalLoss.
         loss_wh (dict | None): Config of wh loss. Default: L1Loss.
@@ -44,7 +38,6 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         self,
         in_channel,
         feat_channel,
-        num_classes,
         loss_center_heatmap=dict(type="GaussianFocalLoss", loss_weight=1.0),
         loss_offset=dict(type="L1Loss", loss_weight=1.0),
         loss_c2v=dict(type="L1Loss", loss_weight=1.0),
@@ -53,9 +46,8 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         test_cfg=None,
         init_cfg=None,
     ):
-        super(CycleCenterNetHeadL1, self).__init__(init_cfg)
-        self.num_classes = num_classes
-        self.heatmap_head = self._build_head(in_channel, feat_channel, 2 * num_classes)
+        super(CycleCenterNetHead, self).__init__(init_cfg)
+        self.heatmap_head = self._build_head(in_channel, feat_channel, 2)
         self.offset_head = self._build_head(in_channel, feat_channel, 2)
         self.center2vertex_head = self._build_head(in_channel, feat_channel, 8)
         self.vertex2center_head = self._build_head(in_channel, feat_channel, 8)
@@ -100,7 +92,7 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
 
         Returns:
             center_heatmap_preds (List[Tensor]): center predict heatmaps for
-                all levels, the channels number is num_classes.
+                all levels, the channels number is 2.
             wh_preds (List[Tensor]): wh predicts for all levels, the channels
                 number is 2.
             offset_preds (List[Tensor]): offset predicts for all levels, the
@@ -116,7 +108,7 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
 
         Returns:
             center_heatmap_pred (Tensor): center predict heatmaps, the
-                channels number is num_classes.
+                channels number is 2.
             wh_pred (Tensor): wh predicts, the channels number is 2.
             offset_pred (Tensor): offset predicts, the channels number is 2.
         """
@@ -148,15 +140,14 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         gt_bboxes,
         gt_labels,
         img_metas,
+        # gt_masks=None,
         gt_bboxes_ignore=None,
     ):
         """Compute losses of the head.
 
         Args:
             center_heatmap_preds (list[Tensor]): center predict heatmaps for
-                all levels with shape (B, num_classes, H, W).
-            wh_preds (list[Tensor]): wh predicts for all levels with
-                shape (B, 2, H, W).
+                all levels with shape (B, 2, H, W).
             offset_preds (list[Tensor]): offset predicts for all levels
                 with shape (B, 2, H, W).
             center2vertex_pred (list[Tensor]): center2vertex predicts for all levels
@@ -168,8 +159,6 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
             gt_labels (list[Tensor]): class indices corresponding to each box.
             img_metas (list[dict]): Meta information of each image, e.g.,
                 image size, scaling factor, etc.
-            gt_bboxes_ignore (None | list[Tensor]): specify which bounding
-                boxes can be ignored when computing the loss. Default: None
 
         Returns:
             dict[str, Tensor]: which has components below:
@@ -253,7 +242,7 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
             tuple[dict,float]: The float value is mean avg_factor, the dict has
                components below:
                - center_heatmap_target (Tensor): targets of center heatmap, \
-                   shape (B, num_classes, H, W).
+                   shape (B, 2, H, W).
                - wh_target (Tensor): targets of wh predict, shape \
                    (B, 2, H, W).
                - offset_target (Tensor): targets of offset predict, shape \
@@ -271,7 +260,7 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
         width_ratio = float(feat_w / img_w)
         height_ratio = float(feat_h / img_h)
 
-        center_heatmap_target = gt_bboxes[-1].new_zeros([bs, 2 * self.num_classes, feat_h, feat_w])
+        center_heatmap_target = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
         offset_target = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
         offset_target_weight = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
         c2v_target = gt_bboxes[-1].new_zeros([bs, 8, feat_h, feat_w])
@@ -429,7 +418,7 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
 
         Args:
             center_heatmap_preds (list[Tensor]): Center predict heatmaps for
-                all levels with shape (B, num_classes, H, W).
+                all levels with shape (B, 2, H, W).
             wh_preds (list[Tensor]): WH predicts for all levels with
                 shape (B, 2, H, W).
             offset_preds (list[Tensor]): Offset predicts for all levels
@@ -513,15 +502,11 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
 
         Args:
             center_heatmap_pred (Tensor): Center heatmap for current level with
-                shape (1, num_classes, H, W).
+                shape (1, 2, H, W).
             wh_pred (Tensor): WH heatmap for current level with shape
-                (1, num_classes, H, W).
+                (1, 2, H, W).
             offset_pred (Tensor): Offset for current level with shape
                 (1, corner_offset_channels, H, W).
-            # center2vertex_pred (list[Tensor]): center2vertex predicts for all levels
-            #     with shape (1, 8, H, W).
-            # vertex2center_pred (list[Tensor]): vertex2center predicts for all levels
-            #     with shape (1, 8, H, W).
             img_meta (dict): Meta information of current image, e.g.,
                 image size, scaling factor, etc.
             rescale (bool): If True, return boxes in original image space.
@@ -571,7 +556,7 @@ class CycleCenterNetHeadL1(BaseDenseHead, BBoxTestMixin):
 
         Args:
             center_heatmap_pred (Tensor): center predict heatmap,
-               shape (B, num_classes, H, W).
+               shape (B, 2, H, W).
             wh_pred (Tensor): wh predict, shape (B, 2, H, W).
             offset_pred (Tensor): offset predict, shape (B, 2, H, W).
             img_shape (list[int]): image shape in [h, w] format.
