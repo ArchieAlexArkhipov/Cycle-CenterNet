@@ -267,12 +267,15 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         v2c_target = gt_bboxes[-1].new_zeros([bs, 8, feat_h, feat_w])
         pairing_weight = gt_bboxes[-1].new_zeros([bs, 8, feat_h, feat_w])
 
+        radius = gaussian_radius([feat_h / 8, feat_w / 8], min_overlap=0.3)
+        radius = max(0, int(radius))
+
         for batch_id in range(bs):
             gt_bbox = gt_bboxes[batch_id]
             center_x = (gt_bbox[:, [0]] + gt_bbox[:, [2]]) * width_ratio / 2
             center_y = (gt_bbox[:, [1]] + gt_bbox[:, [3]]) * height_ratio / 2
             gt_centers = torch.cat((center_x, center_y), dim=1)
-            vertexes = {}
+            vertexes = set()
             for j, ct in enumerate(gt_centers):
                 ctx_int, cty_int = ct.int()
                 ctx, cty = ct
@@ -280,12 +283,10 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
                 scale_box_w = (gt_bbox[j][2] - gt_bbox[j][0]) * width_ratio
                 scale_box_h_r = scale_box_h / 2
                 scale_box_w_r = scale_box_w / 2
-                radius = gaussian_radius([scale_box_h, scale_box_w], min_overlap=0.3)
-                radius = max(0, int(radius))
                 gen_gaussian_target(
-                    center_heatmap_target[batch_id, 0],
-                    [ctx_int, cty_int],
-                    radius,
+                    heatmap=center_heatmap_target[batch_id, 0],
+                    center=[ctx_int, cty_int],
+                    radius=radius,
                 )
 
                 tl_x, tr_x, br_x, bl_x = map(
@@ -305,17 +306,13 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
                     lambda x: feat_h - 1 if x >= feat_h else x if x >= 0 else 0,
                     (tl_y_int, tr_y_int, br_y_int, bl_y_int),
                 )
-                vtx_gaus_r = max(0, int(gaussian_radius([scale_box_h_r, scale_box_w_r], min_overlap=0.3)))
                 for x, y in (
                     (tl_x_int, tl_y_int),
                     (tr_x_int, tr_y_int),
                     (br_x_int, br_y_int),
                     (bl_x_int, bl_y_int),
                 ):
-                    if (x, y) in vertexes:
-                        vertexes[(x, y)].append(vtx_gaus_r)
-                    else:
-                        vertexes[(x, y)] = [vtx_gaus_r]
+                    vertexes.add((x, y))
 
                 offset_target[batch_id, 0, cty_int, ctx_int] = ctx - ctx_int
                 offset_target[batch_id, 0, tl_y_int, tl_x_int] = tl_x - tl_x_int
@@ -378,11 +375,11 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
                         w = 1 - torch.exp(-pi * D_cv)
                         pairing_weight[batch_id, 2 * idx + k, cty_int, ctx_int] += w
                         pairing_weight[batch_id, 2 * idx + k, v_y_int, v_x_int] += w
-            for point, radiuses in vertexes.items():
+            for x, y in vertexes:
                 gen_gaussian_target(
                     heatmap=center_heatmap_target[batch_id, 1],
-                    center=list(point),
-                    radius=max(0, int(sum(radiuses) / len(radiuses))),
+                    center=[x, y],
+                    radius=radius,
                 )
 
         avg_factor = max(1, center_heatmap_target.eq(1).sum())
