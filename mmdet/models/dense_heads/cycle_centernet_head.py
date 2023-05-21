@@ -13,6 +13,9 @@ from ..utils.gaussian_target import get_local_maximum, get_topk_from_heatmap, tr
 from .base_dense_head import BaseDenseHead
 from .dense_test_mixins import BBoxTestMixin
 
+from time import time
+from datetime import datetime
+
 
 @HEADS.register_module()
 class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
@@ -177,7 +180,8 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         offset_pred = offset_preds[0]
         center2vertex_pred = center2vertex_pred[0]
         vertex2center_pred = vertex2center_pred[0]
-
+        print("start get targets ", datetime.now().strftime("%H:%M:%S"))
+        start = time()
         target_result, avg_factor = self.get_targets(
             gt_bboxes,
             gt_labels,
@@ -186,7 +190,7 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
             center2vertex_pred,
             vertex2center_pred,
         )
-
+        print("end get targets ", time() - start)
         center_heatmap_target = target_result["center_heatmap_target"]
         offset_target = target_result["offset_target"]
         offset_target_weight = target_result["offset_target_weight"]
@@ -199,25 +203,28 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         loss_center_heatmap = self.loss_center_heatmap(
             center_heatmap_pred, center_heatmap_target, avg_factor=avg_factor
         )
+        print("loss_center_heatmap ", datetime.now().strftime("%H:%M:%S"))
         loss_offset = self.loss_offset(
             offset_pred,
             offset_target,
             offset_target_weight,
             avg_factor=avg_factor * 2,
         )
+        print("loss_offset ", datetime.now().strftime("%H:%M:%S"))
         loss_c2v = self.loss_c2v(
             center2vertex_pred,
             center2vertex_target,
             pairing_weight,
             avg_factor=avg_factor * 8,
         )
+        print("loss_c2v ", datetime.now().strftime("%H:%M:%S"))
         loss_v2c = self.loss_v2c(
             vertex2center_pred,
             vertex2center_target,
             pairing_weight,
             avg_factor=avg_factor * 8,
         )
-
+        print("loss_v2c ", datetime.now().strftime("%H:%M:%S"))
         return dict(
             loss_center_heatmap=loss_center_heatmap,
             loss_offset=loss_offset,
@@ -266,121 +273,113 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         c2v_target = gt_bboxes[-1].new_zeros([bs, 8, feat_h, feat_w])
         v2c_target = gt_bboxes[-1].new_zeros([bs, 8, feat_h, feat_w])
         pairing_weight = gt_bboxes[-1].new_zeros([bs, 8, feat_h, feat_w])
-
         for batch_id in range(bs):
+            print("   for batch_id in range(bs) ", datetime.now().strftime("%H:%M:%S"))
             gt_bbox = gt_bboxes[batch_id]
-            center_x = (gt_bbox[:, [0]] + gt_bbox[:, [2]]) * width_ratio / 2
-            center_y = (gt_bbox[:, [1]] + gt_bbox[:, [3]]) * height_ratio / 2
-            gt_centers = torch.cat((center_x, center_y), dim=1)
+            # center_x = (gt_bbox[:, [0]] + gt_bbox[:, [2]]) * width_ratio / 2
+            # center_y = (gt_bbox[:, [1]] + gt_bbox[:, [3]]) * height_ratio / 2
+            # gt_centers = torch.cat((center_x, center_y), dim=1)
             vertexes = {}
-            for j, ct in enumerate(gt_centers):
-                ctx_int, cty_int = ct.int()
-                ctx, cty = ct
-                scale_box_h = (gt_bbox[j][3] - gt_bbox[j][1]) * height_ratio
-                scale_box_w = (gt_bbox[j][2] - gt_bbox[j][0]) * width_ratio
-                scale_box_h_r = scale_box_h / 2
-                scale_box_w_r = scale_box_w / 2
-                radius = gaussian_radius([scale_box_h, scale_box_w], min_overlap=0.3)
-                radius = max(0, int(radius))
-                gen_gaussian_target(
-                    center_heatmap_target[batch_id, 0],
-                    [ctx_int, cty_int],
-                    radius,
-                )
+            centers = {}
+            for j, gt_box in enumerate(gt_bbox):
+                print("      for j, gt_box in enumerate(gt_bbox) ", datetime.now().strftime("%H:%M:%S"))
+                ctx, cty = gt_box[:2]
+                ctx, cty = ctx * width_ratio, cty * height_ratio
+                ctx_int, cty_int = ctx.int(), cty.int()
 
-                tl_x, tr_x, br_x, bl_x = map(
-                    lambda x: x * width_ratio, (gt_bbox[j][0], gt_bbox[j][2], gt_bbox[j][2], gt_bbox[j][0])
-                )
-                tl_y, tr_y, br_y, bl_y = map(
-                    lambda x: x * height_ratio, (gt_bbox[j][1], gt_bbox[j][1], gt_bbox[j][3], gt_bbox[j][3])
-                )
-                tl_x_int, tl_y_int, tr_x_int, tr_y_int, br_x_int, br_y_int, bl_x_int, bl_y_int = map(
-                    int, (tl_x, tl_y, tr_x, tr_y, br_x, br_y, bl_x, bl_y)
-                )
-                tl_x_int, tr_x_int, br_x_int, bl_x_int = map(
-                    lambda x: feat_w - 1 if x >= feat_w else x if x >= 0 else 0,
-                    (tl_x_int, tr_x_int, br_x_int, bl_x_int),
-                )
-                tl_y_int, tr_y_int, br_y_int, bl_y_int = map(
-                    lambda x: feat_h - 1 if x >= feat_h else x if x >= 0 else 0,
-                    (tl_y_int, tr_y_int, br_y_int, bl_y_int),
-                )
-                vtx_gaus_r = max(0, int(gaussian_radius([scale_box_h_r, scale_box_w_r], min_overlap=0.3)))
-                for x, y in (
-                    (tl_x_int, tl_y_int),
-                    (tr_x_int, tr_y_int),
-                    (br_x_int, br_y_int),
-                    (bl_x_int, bl_y_int),
-                ):
-                    if (x, y) in vertexes:
-                        vertexes[(x, y)].append(vtx_gaus_r)
-                    else:
-                        vertexes[(x, y)] = [vtx_gaus_r]
+                vtx, vty = gt_box[2:]
+                vtx, vty = vtx * width_ratio, vty * height_ratio
+                vtx_sign, vty_sign = vtx >= 0, vty >= 0
+                vtx, vty = abs(vtx), abs(vty)
+                vtx_int, vty_int = abs(vtx.int()), abs(vty.int())
+
+                vtx_int = feat_w - 1 if vtx_int >= feat_w else vtx_int if vtx_int >= 0 else 0
+                vty_int = feat_h - 1 if vty_int >= feat_h else vty_int if vty_int >= 0 else 0
+
+                radius = gaussian_radius([vtx - ctx, vty - cty], min_overlap=0.3)
+                radius = max(0, int(radius))
+
+                if (vtx_int, vty_int) in vertexes:
+                    vertexes[(vtx_int, vty_int)].append(radius)
+                else:
+                    vertexes[(vtx_int, vty_int)] = [radius]
+
+                if (ctx_int, cty_int) in centers:
+                    centers[(ctx_int, cty_int)].append(radius)
+                else:
+                    centers[(ctx_int, cty_int)] = [radius]
 
                 offset_target[batch_id, 0, cty_int, ctx_int] = ctx - ctx_int
-                offset_target[batch_id, 0, tl_y_int, tl_x_int] = tl_x - tl_x_int
-                offset_target[batch_id, 0, tr_y_int, tr_x_int] = tr_x - tr_x_int
-                offset_target[batch_id, 0, br_y_int, br_x_int] = br_x - br_x_int
-                offset_target[batch_id, 0, bl_y_int, bl_x_int] = bl_x - bl_x_int
-
+                offset_target[batch_id, 0, vty_int, vtx_int] = vtx - vtx_int
                 offset_target[batch_id, 1, cty_int, ctx_int] = cty - cty_int
-                offset_target[batch_id, 1, tl_y_int, tl_x_int] = tl_y - tl_y_int
-                offset_target[batch_id, 1, tr_y_int, tr_x_int] = tr_y - tr_y_int
-                offset_target[batch_id, 1, br_y_int, br_x_int] = br_y - br_y_int
-                offset_target[batch_id, 1, bl_y_int, bl_x_int] = bl_y - bl_y_int
+                offset_target[batch_id, 1, vty_int, vtx_int] = vty - vty_int
 
                 offset_target_weight[batch_id, :, cty_int, ctx_int] = 1
-                offset_target_weight[batch_id, :, tl_y_int, tl_x_int] = 1
-                offset_target_weight[batch_id, :, tr_y_int, tr_x_int] = 1
-                offset_target_weight[batch_id, :, br_y_int, br_x_int] = 1
-                offset_target_weight[batch_id, :, bl_y_int, bl_x_int] = 1
+                offset_target_weight[batch_id, :, vty_int, vtx_int] = 1
 
-                c2v_target[batch_id, 0, cty_int, ctx_int] = -scale_box_w_r
-                c2v_target[batch_id, 1, cty_int, ctx_int] = -scale_box_h_r
-                c2v_target[batch_id, 2, cty_int, ctx_int] = scale_box_w_r
-                c2v_target[batch_id, 3, cty_int, ctx_int] = -scale_box_h_r
-                c2v_target[batch_id, 4, cty_int, ctx_int] = scale_box_w_r
-                c2v_target[batch_id, 5, cty_int, ctx_int] = scale_box_h_r
-                c2v_target[batch_id, 6, cty_int, ctx_int] = -scale_box_w_r
-                c2v_target[batch_id, 7, cty_int, ctx_int] = scale_box_h_r
+                if (not vtx_sign) and (not vty_sign):
+                    c2v_target[batch_id, 0, cty_int, ctx_int] = vtx - ctx
+                    c2v_target[batch_id, 1, cty_int, ctx_int] = vty - cty
 
-                v2c_target[batch_id, 0, tl_y_int, tl_x_int] = scale_box_w_r
-                v2c_target[batch_id, 1, tl_y_int, tl_x_int] = scale_box_h_r
-                v2c_target[batch_id, 2, tr_y_int, tr_x_int] = -scale_box_w_r
-                v2c_target[batch_id, 3, tr_y_int, tr_x_int] = scale_box_h_r
-                v2c_target[batch_id, 4, br_y_int, br_x_int] = -scale_box_w_r
-                v2c_target[batch_id, 5, br_y_int, br_x_int] = -scale_box_h_r
-                v2c_target[batch_id, 6, bl_y_int, bl_x_int] = scale_box_w_r
-                v2c_target[batch_id, 7, bl_y_int, bl_x_int] = -scale_box_h_r
+                    v2c_target[batch_id, 0, vty_int, vtx_int] = ctx - vtx
+                    v2c_target[batch_id, 1, vty_int, vtx_int] = cty - vty
 
-                # Pairing loss
-                for idx, v_x_int, v_y_int in (
-                    (0, tl_x_int, tl_y_int),
-                    (1, tr_x_int, tr_y_int),
-                    (2, br_x_int, br_y_int),
-                    (3, bl_x_int, bl_y_int),
-                ):
-                    for k in range(2):
-                        D_cv = min(
-                            torch.tensor(1.0),
-                            (
-                                torch.abs(
-                                    c2v_pred[batch_id, 2 * idx + k, cty_int, ctx_int]
-                                    - c2v_target[batch_id, 2 * idx + k, cty_int, ctx_int]
-                                )
-                                + torch.abs(
-                                    v2c_pred[batch_id, 2 * idx + k, v_y_int, v_x_int]
-                                    - v2c_target[batch_id, 2 * idx + k, v_y_int, v_x_int]
-                                )
-                            )
-                            / torch.abs(c2v_target[batch_id, 2 * idx + k, cty_int, ctx_int]),
-                        )
-                        w = 1 - torch.exp(-pi * D_cv)
-                        pairing_weight[batch_id, 2 * idx + k, cty_int, ctx_int] += w
-                        pairing_weight[batch_id, 2 * idx + k, v_y_int, v_x_int] += w
+                    vertex_chanels = (0, 1)
+                elif (vtx_sign) and (not vty_sign):
+                    c2v_target[batch_id, 2, cty_int, ctx_int] = vtx - ctx
+                    c2v_target[batch_id, 3, cty_int, ctx_int] = vty - cty
+
+                    v2c_target[batch_id, 2, vty_int, vtx_int] = ctx - vtx
+                    v2c_target[batch_id, 3, vty_int, vtx_int] = cty - vty
+                    vertex_chanels = (2, 3)
+                elif (vtx_sign) and (vty_sign):
+                    c2v_target[batch_id, 4, cty_int, ctx_int] = vtx - ctx
+                    c2v_target[batch_id, 5, cty_int, ctx_int] = vty - cty
+
+                    v2c_target[batch_id, 4, vty_int, vtx_int] = ctx - vtx
+                    v2c_target[batch_id, 5, vty_int, vtx_int] = cty - vty
+                    vertex_chanels = (4, 5)
+                elif (not vtx_sign) and (vty_sign):
+                    c2v_target[batch_id, 6, cty_int, ctx_int] = vtx - ctx
+                    c2v_target[batch_id, 7, cty_int, ctx_int] = vty - cty
+
+                    v2c_target[batch_id, 6, vty_int, vtx_int] = ctx - vtx
+                    v2c_target[batch_id, 7, vty_int, vtx_int] = cty - vty
+                    vertex_chanels = (6, 7)
+
+                D_cv = min(
+                    torch.tensor(1.0),
+                    (
+                        torch.abs(c2v_pred[batch_id, vertex_chanels[0], cty_int, ctx_int] - vtx + ctx)
+                        + torch.abs(v2c_pred[batch_id, vertex_chanels[0], vty_int, vtx_int] - ctx + vtx)
+                    )
+                    / torch.abs(vtx - ctx),
+                )
+                w = 1 - torch.exp(-pi * D_cv)
+                pairing_weight[batch_id, vertex_chanels[0], cty_int, ctx_int] += w
+                pairing_weight[batch_id, vertex_chanels[0], vty_int, vtx_int] += w
+
+                D_cv = min(
+                    torch.tensor(1.0),
+                    (
+                        torch.abs(c2v_pred[batch_id, vertex_chanels[1], cty_int, ctx_int] - vty + cty)
+                        + torch.abs(v2c_pred[batch_id, vertex_chanels[1], vty_int, vtx_int] - cty + vty)
+                    )
+                    / torch.abs(vtx - ctx),
+                )
+                w = 1 - torch.exp(-pi * D_cv)
+                pairing_weight[batch_id, vertex_chanels[1], cty_int, ctx_int] += w
+                pairing_weight[batch_id, vertex_chanels[1], vty_int, vtx_int] += w
+
             for point, radiuses in vertexes.items():
                 gen_gaussian_target(
                     heatmap=center_heatmap_target[batch_id, 1],
+                    center=list(point),
+                    radius=max(0, int(sum(radiuses) / len(radiuses))),
+                )
+            for point, radiuses in centers.items():
+                gen_gaussian_target(
+                    heatmap=center_heatmap_target[batch_id, 0],
                     center=list(point),
                     radius=max(0, int(sum(radiuses) / len(radiuses))),
                 )
