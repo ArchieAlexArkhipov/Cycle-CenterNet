@@ -140,7 +140,7 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         gt_bboxes,
         gt_labels,
         img_metas,
-        # gt_masks=None,
+        gt_masks=None,
         gt_bboxes_ignore=None,
     ):
         """Compute losses of the head.
@@ -181,6 +181,7 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         target_result, avg_factor = self.get_targets(
             gt_bboxes,
             gt_labels,
+            gt_masks,
             center_heatmap_pred.shape,
             img_metas[0]["pad_shape"],
             center2vertex_pred,
@@ -225,7 +226,7 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
             loss_v2c=loss_v2c,
         )
 
-    def get_targets(self, gt_bboxes, gt_labels, feat_shape, img_shape, c2v_pred, v2c_pred):
+    def get_targets(self, gt_bboxes, gt_labels, gt_masks, feat_shape, img_shape, c2v_pred, v2c_pred):
         """Compute regression and classification targets in multiple images and
         compute weight for Pairing Loss.
 
@@ -271,29 +272,19 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         radius = max(0, int(radius))
 
         for batch_id in range(bs):
-            gt_bbox = gt_bboxes[batch_id]
-            center_x = (gt_bbox[:, [0]] + gt_bbox[:, [2]]) * width_ratio / 2
-            center_y = (gt_bbox[:, [1]] + gt_bbox[:, [3]]) * height_ratio / 2
-            gt_centers = torch.cat((center_x, center_y), dim=1)
-            for j, ct in enumerate(gt_centers):
-                ctx_int, cty_int = ct.int()
-                ctx, cty = ct
-                scale_box_h = (gt_bbox[j][3] - gt_bbox[j][1]) * height_ratio
-                scale_box_w = (gt_bbox[j][2] - gt_bbox[j][0]) * width_ratio
-                scale_box_h_r = scale_box_h / 2
-                scale_box_w_r = scale_box_w / 2
+            for mask in gt_masks[batch_id].masks:
+                mask = mask[0]
+                ctx, cty = (mask[0] + mask[2] + mask[4] + mask[6]) / 4, (mask[1] + mask[3] + mask[5] + mask[7]) / 4
+                ctx_int, cty_int = int(ctx * width_ratio), int(cty * height_ratio)
+
                 gen_gaussian_target(
                     heatmap=center_heatmap_target[batch_id, 0],
                     center=[ctx_int, cty_int],
                     radius=radius,
                 )
 
-                tl_x, tr_x, br_x, bl_x = map(
-                    lambda x: x * width_ratio, (gt_bbox[j][0], gt_bbox[j][2], gt_bbox[j][2], gt_bbox[j][0])
-                )
-                tl_y, tr_y, br_y, bl_y = map(
-                    lambda x: x * height_ratio, (gt_bbox[j][1], gt_bbox[j][1], gt_bbox[j][3], gt_bbox[j][3])
-                )
+                tl_x, tr_x, br_x, bl_x = map(lambda x: x * width_ratio, (mask[0], mask[2], mask[4], mask[6]))
+                tl_y, tr_y, br_y, bl_y = map(lambda x: x * height_ratio, (mask[1], mask[3], mask[5], mask[7]))
                 tl_x_int, tl_y_int, tr_x_int, tr_y_int, br_x_int, br_y_int, bl_x_int, bl_y_int = map(
                     int, (tl_x, tl_y, tr_x, tr_y, br_x, br_y, bl_x, bl_y)
                 )
@@ -336,23 +327,23 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
                 offset_target_weight[batch_id, :, br_y_int, br_x_int] = 1
                 offset_target_weight[batch_id, :, bl_y_int, bl_x_int] = 1
 
-                c2v_target[batch_id, 0, cty_int, ctx_int] = -scale_box_w_r
-                c2v_target[batch_id, 1, cty_int, ctx_int] = -scale_box_h_r
-                c2v_target[batch_id, 2, cty_int, ctx_int] = scale_box_w_r
-                c2v_target[batch_id, 3, cty_int, ctx_int] = -scale_box_h_r
-                c2v_target[batch_id, 4, cty_int, ctx_int] = scale_box_w_r
-                c2v_target[batch_id, 5, cty_int, ctx_int] = scale_box_h_r
-                c2v_target[batch_id, 6, cty_int, ctx_int] = -scale_box_w_r
-                c2v_target[batch_id, 7, cty_int, ctx_int] = scale_box_h_r
+                c2v_target[batch_id, 0, cty_int, ctx_int] = tl_x - ctx
+                c2v_target[batch_id, 1, cty_int, ctx_int] = tl_y - cty
+                c2v_target[batch_id, 2, cty_int, ctx_int] = tr_x - ctx
+                c2v_target[batch_id, 3, cty_int, ctx_int] = tr_y - cty
+                c2v_target[batch_id, 4, cty_int, ctx_int] = br_x - ctx
+                c2v_target[batch_id, 5, cty_int, ctx_int] = br_y - cty
+                c2v_target[batch_id, 6, cty_int, ctx_int] = bl_x - ctx
+                c2v_target[batch_id, 7, cty_int, ctx_int] = bl_y - cty
 
-                v2c_target[batch_id, 0, tl_y_int, tl_x_int] = scale_box_w_r
-                v2c_target[batch_id, 1, tl_y_int, tl_x_int] = scale_box_h_r
-                v2c_target[batch_id, 2, tr_y_int, tr_x_int] = -scale_box_w_r
-                v2c_target[batch_id, 3, tr_y_int, tr_x_int] = scale_box_h_r
-                v2c_target[batch_id, 4, br_y_int, br_x_int] = -scale_box_w_r
-                v2c_target[batch_id, 5, br_y_int, br_x_int] = -scale_box_h_r
-                v2c_target[batch_id, 6, bl_y_int, bl_x_int] = scale_box_w_r
-                v2c_target[batch_id, 7, bl_y_int, bl_x_int] = -scale_box_h_r
+                v2c_target[batch_id, 0, tl_y_int, tl_x_int] = ctx - tl_x
+                v2c_target[batch_id, 1, tl_y_int, tl_x_int] = cty - tl_y
+                v2c_target[batch_id, 2, tr_y_int, tr_x_int] = ctx - tr_x
+                v2c_target[batch_id, 3, tr_y_int, tr_x_int] = cty - tr_y
+                v2c_target[batch_id, 4, br_y_int, br_x_int] = ctx - br_x
+                v2c_target[batch_id, 5, br_y_int, br_x_int] = cty - br_y
+                v2c_target[batch_id, 6, bl_y_int, bl_x_int] = ctx - bl_x
+                v2c_target[batch_id, 7, bl_y_int, bl_x_int] = cty - bl_y
 
                 # Pairing loss
                 for idx, v_x_int, v_y_int in (
