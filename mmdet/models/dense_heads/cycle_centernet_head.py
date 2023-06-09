@@ -33,7 +33,7 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         train_cfg (dict | None): Training config. Useless in CenterNet,
             but we keep this variable for SingleStageDetector. Default: None.
         test_cfg (dict | None): Testing config of CenterNet. Default: None.
-        init_cfg (dict or list[dict], optional): Initialization config dict.
+        init_cfg (dict or list[dict], optional): Initialization config dict.`
             Default: None
     """
 
@@ -41,6 +41,7 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         self,
         in_channel,
         feat_channel,
+        num_classes,
         loss_center_heatmap=dict(type="GaussianFocalLoss", loss_weight=1.0),
         loss_offset=dict(type="L1Loss", loss_weight=1.0),
         loss_c2v=dict(type="L1Loss", loss_weight=1.0),
@@ -49,6 +50,7 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         test_cfg=None,
         init_cfg=None,
     ):
+        print("init")
         super(CycleCenterNetHead, self).__init__(init_cfg)
         self.heatmap_head = self._build_head(in_channel, feat_channel, 2)
         self.offset_head = self._build_head(in_channel, feat_channel, 2)
@@ -64,6 +66,8 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         self.test_cfg = test_cfg
         self.fp16_enabled = False
 
+        self.num_classes = num_classes
+
     def _build_head(self, in_channel, feat_channel, out_channel):
         """Build head for each branch."""
         layer = nn.Sequential(
@@ -75,6 +79,7 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
 
     def init_weights(self):
         """Initialize weights of the head."""
+        print("init_weights")
         bias_init = bias_init_with_prob(0.1)
         self.heatmap_head[-1].bias.data.fill_(bias_init)
         for head in [
@@ -101,6 +106,7 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
             offset_preds (List[Tensor]): offset predicts for all levels, the
                 channels number is 2.
         """
+        print("forward")
         return multi_apply(self.forward_single, feats)
 
     def forward_single(self, feat):
@@ -169,6 +175,7 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
                 - loss_wh (Tensor): loss of hw heatmap
                 - loss_offset (Tensor): loss of offset heatmap.
         """
+        print("loss")
         assert (
             len(center_heatmap_preds)
             == len(offset_preds)
@@ -182,6 +189,7 @@ class CycleCenterNetHead(BaseDenseHead, BBoxTestMixin):
         vertex2center_pred = vertex2center_pred[0]
         print("start get targets ", datetime.now().strftime("%H:%M:%S"))
         start = time()
+        print(img_metas[0]["filename"])
         target_result, avg_factor = self.get_targets(
             gt_bboxes,
             gt_labels,
