@@ -21,13 +21,6 @@ This paper tackles the problem of table structure parsing (TSP) from images in t
 
 [**Link**](https://drive.google.com/file/d/1taFK_co-9ofbL1pivhKrqHf8-icb1ZaK/view?usp=share_link) **to download model Cycle-CenterNet(DLA backbone) trained on bounding quadrangles**. [**Config**](https://github.com/ArchieAlexArkhipov/Cycle-CenterNet/blob/master/configs/centernet/wtw_quad_cycle_centernet_dla34_dcnv2_150e_coco.py) 
 
-
-## Results
-
-## Preprocessing
-
-## Post-processing
-
 ## Installation
 
 ```conda create --name openmmlab python=3.8 -y```
