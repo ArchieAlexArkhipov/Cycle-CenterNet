@@ -5,13 +5,22 @@ The unofficial Cycle-CenterNet architecture repository, based on the MMDetection
 ![](demo/schema.jpg)
 > [**Parsing table structures in the wild**]([http://openaccess.thecvf.com/content/ICCV2021/papers/Long_Parsing_Table_Structures_in_the_Wild_ICCV_2021_paper.pdf]),       
 > Long, R., Wang, W., Xue, N., Gao, F., Yang, Z., Wang, Y., & Xia, G. S.      
-    
-## Abstract 
-This paper tackles the problem of table structure parsing (TSP) from images in the wild. In contrast to existing studies that mainly focus on  parsing well-aligned tabular images with simple layouts from scanned PDF documents, we aim to establish a practical table structure parsing system for real-world scenarios where tabular input images are taken or scanned with severe deformation, bending or occlusions. For designing such a system, we propose an approach named Cycle-CenterNet on the top of CenterNet with a novel cycle-pairing module to simultaneously detect and group tabular cells into structured tables. In the cycle-pairing module, a new pairing loss function is proposed for the network training. Alongside with our Cycle-CenterNet, we also present a large-scale dataset, named Wired Table in the Wild (WTW), which includes well-annotated structure parsing of multiple style tables in several scenes like photo, scanning files, web pages, etc.. In experiments, we demonstrate that our Cycle-CenterNet consistently achieves the best accuracy of table structure parsing on the new WTW dataset by 24.6% absolute improvement evaluated by the TEDS metric. A more comprehensive experimental analysis also validates the advantages of our proposed methods for the TSP task.
 
 Contact: [arkhipov.ai@phystech.edu](mailto:arkhipov.ai@phystech.edu). Any questions or discussions are welcomed! 
 
+## Abstract 
+This paper tackles the problem of table structure parsing (TSP) from images in the wild. In contrast to existing studies that mainly focus on  parsing well-aligned tabular images with simple layouts from scanned PDF documents, we aim to establish a practical table structure parsing system for real-world scenarios where tabular input images are taken or scanned with severe deformation, bending or occlusions. For designing such a system, we propose an approach named Cycle-CenterNet on the top of CenterNet with a novel cycle-pairing module to simultaneously detect and group tabular cells into structured tables. In the cycle-pairing module, a new pairing loss function is proposed for the network training. Alongside with our Cycle-CenterNet, we also present a large-scale dataset, named Wired Table in the Wild (WTW), which includes well-annotated structure parsing of multiple style tables in several scenes like photo, scanning files, web pages, etc.. In experiments, we demonstrate that our Cycle-CenterNet consistently achieves the best accuracy of table structure parsing on the new WTW dataset by 24.6% absolute improvement evaluated by the TEDS metric. A more comprehensive experimental analysis also validates the advantages of our proposed methods for the TSP task.
+
 ## Models
+
+[**Link**](https://drive.google.com/file/d/1ZQZycYwWXMlfZnvC9hFUCtlqd4eOwP8v/view?usp=share_link) to download CenterNet(ResNet backbone)
+
+[**Link**](https://drive.google.com/file/d/1aZ2IF0tQq1Ino4QAsmrk8jcJ85urqsFE/view?usp=share_link) to download CenterNet(DLA backbone)
+
+[**Link**](https://drive.google.com/file/d/1oeqtA84eF_KJi953f8qX8cggDBjOVS3A/view?usp=share_link) to download Cycle-CenterNet(DLA backbone) trained on bounding boxes
+
+[**Link**](https://drive.google.com/file/d/1taFK_co-9ofbL1pivhKrqHf8-icb1ZaK/view?usp=share_link) **to download Cycle-CenterNet(DLA backbone) trained on bounding quadrangles**
+
 
 ## Results
 
