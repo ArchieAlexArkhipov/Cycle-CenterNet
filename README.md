@@ -28,6 +28,20 @@ This paper tackles the problem of table structure parsing (TSP) from images in t
 
 ## Post-processing
 
+## Installation
+
+```conda create --name openmmlab python=3.8 -y```
+
+```conda activate openmmlab```
+
+```pip install torch==1.8.1+cu101 torchvision==0.9.1+cu101 torchaudio==0.8.1 -f https://download.pytorch.org/whl/torch_stable.html```
+
+```pip install mmcv-full==1.6.2 -f https://download.openmmlab.com/mmcv/dist/cu101/torch1.8/index.html```
+
+```pip install -e .```
+
+```conda install -n openmmlab ipykernel --update-deps --force-reinstall```
+
 # MMDetection README
 <div align="center">
   <img src="resources/mmdet-logo.png" width="600"/>
