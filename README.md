@@ -13,13 +13,13 @@ This paper tackles the problem of table structure parsing (TSP) from images in t
 
 ## Models
 
-[**Link**](https://drive.google.com/file/d/1ZQZycYwWXMlfZnvC9hFUCtlqd4eOwP8v/view?usp=share_link) to download CenterNet(ResNet backbone)
+[**Link**](https://drive.google.com/file/d/1ZQZycYwWXMlfZnvC9hFUCtlqd4eOwP8v/view?usp=share_link) to download model CenterNet(ResNet backbone). [**Config**](https://github.com/ArchieAlexArkhipov/Cycle-CenterNet/blob/master/configs/centernet/wtw_centernet_resnet34_dcnv2_150e_coco.py) 
 
-[**Link**](https://drive.google.com/file/d/1aZ2IF0tQq1Ino4QAsmrk8jcJ85urqsFE/view?usp=share_link) to download CenterNet(DLA backbone)
+[**Link**](https://drive.google.com/file/d/1aZ2IF0tQq1Ino4QAsmrk8jcJ85urqsFE/view?usp=share_link) to download model CenterNet(DLA backbone). [**Config**](https://github.com/ArchieAlexArkhipov/Cycle-CenterNet/blob/master/configs/centernet/wtw_centernet_dla34_dcnv2_150e_coco.py) 
 
-[**Link**](https://drive.google.com/file/d/1oeqtA84eF_KJi953f8qX8cggDBjOVS3A/view?usp=share_link) to download Cycle-CenterNet(DLA backbone) trained on bounding boxes
+[**Link**](https://drive.google.com/file/d/1oeqtA84eF_KJi953f8qX8cggDBjOVS3A/view?usp=share_link) to download model Cycle-CenterNet(DLA backbone) trained on bounding boxes. [**Config**](https://github.com/ArchieAlexArkhipov/Cycle-CenterNet/blob/master/configs/centernet/wtw_bbox_cycle_centernet_dla34_dcnv2_150e_coco.py) 
 
-[**Link**](https://drive.google.com/file/d/1taFK_co-9ofbL1pivhKrqHf8-icb1ZaK/view?usp=share_link) **to download Cycle-CenterNet(DLA backbone) trained on bounding quadrangles**
+[**Link**](https://drive.google.com/file/d/1taFK_co-9ofbL1pivhKrqHf8-icb1ZaK/view?usp=share_link) **to download model Cycle-CenterNet(DLA backbone) trained on bounding quadrangles**. [**Config**](https://github.com/ArchieAlexArkhipov/Cycle-CenterNet/blob/master/configs/centernet/wtw_quad_cycle_centernet_dla34_dcnv2_150e_coco.py) 
 
 
 ## Results
